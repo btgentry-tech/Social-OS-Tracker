@@ -16,21 +16,17 @@ export interface VideoData {
   theme?: string;
   format?: string;
   freshness?: number; // days ago
+  
+  // User context
+  notes?: string;
 }
 
 export interface ExecutedMove {
   id: string;
   videoId: string;
-  type: 'leverage' | 'reinforcement' | 'experiment' | 'structural';
+  type: 'repost' | 'fix' | 'new_angle' | 'warning';
   executedAt: string;
   feedback?: 'better' | 'same' | 'worse';
-}
-
-export interface QueuedItem {
-  id: string;
-  videoId: string;
-  type: 'leverage' | 'experiment';
-  addedAt: string;
 }
 
 interface PersistedState {
@@ -38,14 +34,13 @@ interface PersistedState {
   lastSyncedAt: string | null;
   videos: VideoData[];
   brief: GrowthBrief | null;
-  queue: QueuedItem[];
   executions: ExecutedMove[];
   
   setChannelId: (channelId: string) => void;
   setSyncData: (videos: VideoData[], brief: GrowthBrief) => void;
-  queueItem: (item: Omit<QueuedItem, 'id' | 'addedAt'>) => void;
   executeMove: (move: Omit<ExecutedMove, 'id' | 'executedAt'>) => void;
   addFeedback: (executionId: string, feedback: 'better' | 'same' | 'worse') => void;
+  updateVideoNote: (videoId: string, note: string) => void;
   clearData: () => void;
 }
 
@@ -63,7 +58,6 @@ export const usePersistedStore = create<PersistedState>()(
       lastSyncedAt: null,
       videos: [],
       brief: null,
-      queue: [],
       executions: [],
       
       setChannelId: (channelId) => set({ youtubeChannelId: channelId }),
@@ -72,16 +66,16 @@ export const usePersistedStore = create<PersistedState>()(
         brief, 
         lastSyncedAt: new Date().toISOString()
       }),
-      queueItem: (item) => set((state) => ({
-        queue: [...state.queue, { ...item, id: crypto.randomUUID(), addedAt: new Date().toISOString() }]
-      })),
       executeMove: (move) => set((state) => ({
         executions: [...state.executions, { ...move, id: crypto.randomUUID(), executedAt: new Date().toISOString() }]
       })),
       addFeedback: (executionId, feedback) => set((state) => ({
         executions: state.executions.map(e => e.id === executionId ? { ...e, feedback } : e)
       })),
-      clearData: () => set({ youtubeChannelId: "", lastSyncedAt: null, videos: [], brief: null, queue: [], executions: [] }),
+      updateVideoNote: (videoId, notes) => set((state) => ({
+        videos: state.videos.map(v => v.id === videoId ? { ...v, notes } : v)
+      })),
+      clearData: () => set({ youtubeChannelId: "", lastSyncedAt: null, videos: [], brief: null, executions: [] }),
     }),
     {
       name: "social-os-db",

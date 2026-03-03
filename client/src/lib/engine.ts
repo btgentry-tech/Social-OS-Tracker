@@ -17,19 +17,11 @@ export interface GrowthBrief {
     details: string;
   };
   moves: {
-    leverage: PostPackage & { sourceVideoId: string };
-    reinforcement: PostPackage & { sourceVideoId: string };
-    experiment: PostPackage & { theme: string, format: string };
-    structural: PostPackage & { details: string };
+    repost: PostPackage & { sourceVideo: VideoData };
+    fix: PostPackage & { sourceVideo: VideoData };
+    newAngle: PostPackage & { theme: string, format: string };
   };
   warnings: string[];
-  penalties: {
-    fatigue: number;
-    novelty: number;
-    repetition: number;
-  };
-  postingWindows: { day: string; time: string; confidence: string }[];
-  todayGameplan: string[];
   opportunityScore: number;
 }
 
@@ -75,14 +67,16 @@ export function generateStrategicBrief(videos: VideoData[], recentExecutions: an
   const recentThemes = recentVideos.slice(0, 3).map(v => v.theme);
   const repetitionPenalty = new Set(recentThemes).size < 3 ? 30 : 0;
   
-  // Leverage: best performing recent video
-  const leverageTarget = topPerformers[0];
-  // Reinforcement: consistent performer
-  const reinforcementTarget = topPerformers[1] || topPerformers[0];
+  // Find a target to repost (high performer, ideally not super recent)
+  const repostTarget = topPerformers.find(v => (v.freshness || 0) > 14) || topPerformers[0];
+  
+  // Find a target to fix (underperformer)
+  const lowestPerformers = [...processedVideos].sort((a, b) => a.viewCount - b.viewCount);
+  const fixTarget = lowestPerformers.find(v => (v.freshness || 0) < 30) || lowestPerformers[0];
   
   // Experiment: suggest something opposite of the recent repeated theme
   const popularThemes = ['Tutorial', 'Vlog', 'Review', 'Analysis', 'Story', 'Interview'];
-  const experimentTheme = popularThemes.find(t => !recentThemes.includes(t)) || 'Contra-narrative';
+  const newAngleTheme = popularThemes.find(t => !recentThemes.includes(t)) || 'Contra-narrative';
 
   const brief: GrowthBrief = {
     momentum: {
@@ -92,9 +86,9 @@ export function generateStrategicBrief(videos: VideoData[], recentExecutions: an
       details: `Recent 5 videos average (${_formatNum(recentAvg)}) vs historical average (${_formatNum(overallAvg)}).`
     },
     moves: {
-      leverage: {
-        sourceVideoId: leverageTarget.id,
-        why: `"${leverageTarget.title}" hit above average. Extract a sub-topic from this and dive deeper.`,
+      repost: {
+        sourceVideo: repostTarget,
+        why: `This video significantly outperformed your average. It's a strong candidate for a direct repost or a "Part 2" sequel.`,
         hook: `I previously talked about [Topic], but I left out the most important part...`,
         hookVariants: [
           `The secret behind my [Topic] breakdown...`,
@@ -103,11 +97,11 @@ export function generateStrategicBrief(videos: VideoData[], recentExecutions: an
         ],
         captionStarter: `Expanding on my recent video about [X], I wanted to share...`,
         ctaVariants: [`Comment below if you agree!`, `Save this for later.`, `Tag someone who needs to hear this.`],
-        hashtags: `#${leverageTarget.theme?.replace(' ', '') || 'Growth'} #Insights`
+        hashtags: `#${repostTarget.theme?.replace(' ', '') || 'Growth'} #Insights`
       },
-      reinforcement: {
-        sourceVideoId: reinforcementTarget.id,
-        why: `"${reinforcementTarget.title}" showed strong resonance. Use a similar structural format but a new topic.`,
+      fix: {
+        sourceVideo: fixTarget,
+        why: `This video underperformed compared to your average. Likely cause: weak hook or low novelty. Let's fix the intro and try again.`,
         hook: `3 reasons why [New Topic] is exactly like [Old Topic]...`,
         hookVariants: [
           `Here is how [New Topic] works, step-by-step.`,
@@ -118,10 +112,10 @@ export function generateStrategicBrief(videos: VideoData[], recentExecutions: an
         ctaVariants: [`Link in bio for more.`, `What do you think?`, `Share this with a friend.`],
         hashtags: `#Strategy #Breakdown`
       },
-      experiment: {
-        theme: experimentTheme,
+      newAngle: {
+        theme: newAngleTheme,
         format: 'Short-form / High Energy',
-        why: `Momentum allows for risk. Test the "${experimentTheme}" theme to see if it captures a tangential audience.`,
+        why: `You've been posting similar topics recently. Try this new angle to avoid burning out your audience.`,
         hook: `You probably haven't thought about [Tangential Topic] this way...`,
         hookVariants: [
           `An unpopular opinion on [Topic]...`,
@@ -130,44 +124,26 @@ export function generateStrategicBrief(videos: VideoData[], recentExecutions: an
         ],
         captionStarter: `I'm trying something different today. Let me know if...`,
         ctaVariants: [`Drop a 🚀 if you want more of this.`, `Sound off below.`, `Follow for more experiments.`],
-        hashtags: `#Experiment #${experimentTheme.replace(' ', '')}`
-      },
-      structural: {
-        details: 'Format Optimization',
-        why: 'Average view duration drops when intros exceed 15 seconds. Cut the fluff.',
-        hook: `[No specific hook - structural adjustment]`,
-        hookVariants: [],
-        captionStarter: `[N/A]`,
-        ctaVariants: [],
-        hashtags: ''
+        hashtags: `#Experiment #${newAngleTheme.replace(' ', '')}`
       }
     },
     warnings: [],
-    penalties: {
-      fatigue: momentumScore < 40 ? 45 : 10,
-      novelty: momentumScore > 70 ? 15 : 60,
-      repetition: repetitionPenalty
-    },
-    postingWindows: _extractBestWindows(topPerformers),
-    todayGameplan: [
-      `Draft a script expanding on "${leverageTarget.title}"`,
-      `Brainstorm 3 new topics for the "${reinforcementTarget.format}" format`,
-      `Record a rough take for a ${experimentTheme} concept`
-    ],
     opportunityScore: Math.min(100, Math.round(momentumScore * 0.8 + (100 - repetitionPenalty) * 0.2))
   };
 
   if (recentVideos[0].viewCount < overallAvg * 0.5) {
-    brief.warnings.push("Severe underperformance on latest drop. Review thumbnail CTR & hook retention.");
+    brief.warnings.push("Your last video tanked. Check the hook in the first 3 seconds.");
   }
   if (trend === 'down') {
-    brief.warnings.push("Consecutive drop in viewer interest. Audience may be experiencing format fatigue.");
+    brief.warnings.push("Views are dropping across the board. Your audience might be bored. Try the New Angle below.");
   }
   if (repetitionPenalty > 0) {
-    brief.warnings.push("High repetition penalty: You are using the same themes too often recently.");
+    brief.warnings.push("You are posting the exact same type of content too often. Mix it up.");
   }
-  if (brief.warnings.length === 0) {
-    brief.warnings.push("No critical warnings. Operations normal.");
+  
+  // User notes context check
+  if (repostTarget.notes?.toLowerCase().includes('holiday') || repostTarget.notes?.toLowerCase().includes('event')) {
+     brief.warnings.push(`Careful: The video recommended for repost ("${repostTarget.title}") has a note indicating it might be time-sensitive.`);
   }
 
   return brief;
@@ -200,8 +176,8 @@ function _inferTheme(title: string, tags: string[]) {
 function _inferFormat(title: string) {
   const t = title.toLowerCase();
   if (t.includes('shorts') || t.includes('#shorts')) return 'Shorts';
-  if (t.includes('podcast') || t.includes('interview')) return 'Long-form Discussion';
-  return 'Standard Video';
+  if (t.includes('podcast') || t.includes('interview')) return 'Long-form';
+  return 'Standard';
 }
 
 function _avg(arr: number[]) {
@@ -215,46 +191,15 @@ function _formatNum(num: number) {
   return Math.round(num).toString();
 }
 
-function _extractBestWindows(videos: any[]) {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const windows = videos.map(v => {
-    const d = new Date(v.publishedAt);
-    return {
-      day: days[d.getDay()],
-      time: `${d.getHours()}:00 ${d.getHours() >= 12 ? 'PM' : 'AM'}`,
-      confidence: "High (Historical Data)"
-    };
-  });
-  
-  const unique = [];
-  const seen = new Set();
-  for (const w of windows) {
-    const key = w.day + w.time;
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(w);
-    }
-  }
-  
-  return unique.length > 0 ? unique : [
-    { day: "Tuesday", time: "10:00 AM", confidence: "Algorithmic Default" },
-    { day: "Thursday", time: "2:00 PM", confidence: "Algorithmic Default" }
-  ];
-}
-
 function _generateEmptyBrief(): GrowthBrief {
   return {
-    momentum: { score: 0, trend: 'flat', label: 'Insufficient Data', details: 'Need at least 5 synced videos to calculate momentum.' },
+    momentum: { score: 0, trend: 'flat', label: 'Need Data', details: 'Connect YouTube to see momentum.' },
     moves: { 
-      leverage: { sourceVideoId: '', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
-      reinforcement: { sourceVideoId: '', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
-      experiment: { theme: '-', format: '-', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' },
-      structural: { details: '-', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }
+      repost: { sourceVideo: {} as any, why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
+      fix: { sourceVideo: {} as any, why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
+      newAngle: { theme: '-', format: '-', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' },
     },
-    warnings: ['Sync required to generate insights.'],
-    penalties: { fatigue: 0, novelty: 0, repetition: 0 },
-    postingWindows: [],
-    todayGameplan: [],
+    warnings: [],
     opportunityScore: 0
   };
 }

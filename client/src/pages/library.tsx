@@ -1,122 +1,120 @@
 import { useState } from "react";
 import { usePersistedStore } from "@/lib/store";
-import { formatDistanceToNow } from "date-fns";
-import { Search, Filter, PlayCircle, BarChart3, Clock, LayoutGrid, Eye, ArrowUpDown, MoreHorizontal } from "lucide-react";
+import { Search, Eye, MessageSquare, Edit3, CheckCircle2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Library() {
-  const { videos, queueItem } = usePersistedStore();
+  const { videos, updateVideoNote } = usePersistedStore();
+  const { toast } = useToast();
+  
   const [search, setSearch] = useState("");
-  const [filterTheme, setFilterTheme] = useState("All");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [tempNote, setTempNote] = useState("");
 
-  const themes = ["All", ...new Set(videos.map(v => v.theme).filter(Boolean))];
+  const filteredVideos = videos.filter(v => 
+    v.title.toLowerCase().includes(search.toLowerCase()) || 
+    (v.notes && v.notes.toLowerCase().includes(search.toLowerCase()))
+  );
 
-  const filteredVideos = videos.filter(v => {
-    const matchesSearch = v.title.toLowerCase().includes(search.toLowerCase());
-    const matchesTheme = filterTheme === "All" || v.theme === filterTheme;
-    return matchesSearch && matchesTheme;
-  });
+  const startEditing = (video: any) => {
+    setEditingNoteId(video.id);
+    setTempNote(video.notes || "");
+  };
+
+  const saveNote = (id: string) => {
+    updateVideoNote(id, tempNote);
+    setEditingNoteId(null);
+    toast({ title: "Note saved", description: "The engine will consider this context." });
+  };
 
   if (videos.length === 0) {
     return (
-      <div className="max-w-6xl mx-auto p-8 pt-10">
+      <div className="max-w-5xl mx-auto p-8 pt-10">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Content Library</h1>
-        <p className="text-muted-foreground mb-8">Persisted synced data from your connected platforms.</p>
-        <div className="bg-card border border-border/50 rounded-xl p-12 text-center text-muted-foreground">
-          No content synced yet. Please connect a platform first.
+        <div className="bg-card border border-border/50 rounded-xl p-12 text-center text-muted-foreground mt-8">
+          No content synced yet. Please connect your YouTube channel first.
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-8 pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500">
+    <div className="max-w-5xl mx-auto p-4 md:p-8 pt-8 md:pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500">
       <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Content Library</h1>
-          <p className="text-muted-foreground">Local datastore of {videos.length} synced assets used for deterministic inference.</p>
+          <p className="text-muted-foreground text-sm">Your synced videos. Add context notes to help the system give better advice.</p>
         </div>
         
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input 
-              type="text" 
-              placeholder="Search titles..." 
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-md text-sm focus:border-primary focus:outline-none transition-colors"
-            />
-          </div>
-          <select 
-            value={filterTheme}
-            onChange={e => setFilterTheme(e.target.value)}
-            className="bg-background border border-border rounded-md px-3 py-2 text-sm focus:border-primary focus:outline-none"
-          >
-            {themes.map(t => <option key={t as string} value={t as string}>{t}</option>)}
-          </select>
+        <div className="relative w-full md:w-64">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input 
+            type="text" 
+            placeholder="Search titles or notes..." 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-md text-sm focus:border-primary focus:outline-none transition-colors"
+          />
         </div>
       </div>
 
-      <div className="bg-card border border-border/50 rounded-xl overflow-hidden shadow-lg">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-secondary/30 text-muted-foreground text-xs uppercase font-mono tracking-wider">
-              <tr>
-                <th className="px-6 py-4 font-medium">Asset</th>
-                <th className="px-6 py-4 font-medium"><div className="flex items-center gap-1.5"><Eye className="w-3 h-3" /> Views</div></th>
-                <th className="px-6 py-4 font-medium"><div className="flex items-center gap-1.5"><LayoutGrid className="w-3 h-3" /> Inferred Theme</div></th>
-                <th className="px-6 py-4 font-medium"><div className="flex items-center gap-1.5"><PlayCircle className="w-3 h-3" /> Format</div></th>
-                <th className="px-6 py-4 font-medium"><div className="flex items-center gap-1.5"><Clock className="w-3 h-3" /> Freshness</div></th>
-                <th className="px-6 py-4 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {filteredVideos.map((video) => (
-                <tr key={video.id} className="hover:bg-secondary/10 transition-colors group">
-                  <td className="px-6 py-4 font-medium text-foreground max-w-[300px] truncate" title={video.title}>
-                    {video.title}
-                  </td>
-                  <td className="px-6 py-4 tabular-nums">
-                    {video.viewCount.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[10px] uppercase font-bold tracking-wider">
-                      {video.theme || 'Unknown'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground">
-                    {video.format || 'Standard'}
-                  </td>
-                  <td className="px-6 py-4 text-muted-foreground">
-                    {video.freshness}d
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => queueItem({ videoId: video.id, type: 'leverage' })}
-                        className="text-xs px-2 py-1 bg-secondary hover:bg-secondary/80 rounded border border-border text-foreground transition-colors"
-                      >
-                        Queue L
-                      </button>
-                      <button 
-                        onClick={() => queueItem({ videoId: video.id, type: 'experiment' })}
-                        className="text-xs px-2 py-1 bg-secondary hover:bg-secondary/80 rounded border border-border text-foreground transition-colors"
-                      >
-                        Queue E
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          
-          {filteredVideos.length === 0 && (
-            <div className="p-8 text-center text-muted-foreground">
-              No assets match your filters.
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {filteredVideos.map((video) => (
+          <div key={video.id} className="bg-card border border-border/50 rounded-xl overflow-hidden shadow-sm flex flex-col group">
+            <div className="flex gap-4 p-4 border-b border-border/30">
+              {video.thumbnail ? (
+                <img src={video.thumbnail} alt={video.title} className="w-28 h-20 object-cover rounded bg-secondary shrink-0" />
+              ) : (
+                <div className="w-28 h-20 rounded bg-secondary flex items-center justify-center shrink-0">
+                  <span className="text-xs text-muted-foreground">No image</span>
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm line-clamp-2 mb-1" title={video.title}>{video.title}</h3>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-2">
+                  <span className="flex items-center gap-1"><Eye className="w-3 h-3" /> {video.viewCount.toLocaleString()}</span>
+                  <span className="flex items-center gap-1 text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded">{video.freshness}d ago</span>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+            
+            <div className="p-4 bg-secondary/10 flex-1 flex flex-col justify-center">
+              {editingNoteId === video.id ? (
+                <div className="flex gap-2">
+                  <input 
+                    autoFocus
+                    type="text"
+                    value={tempNote}
+                    onChange={e => setTempNote(e.target.value)}
+                    placeholder="e.g. Vacation vlog, do not repost..."
+                    className="flex-1 bg-background border border-primary/50 rounded px-2 py-1.5 text-sm focus:outline-none"
+                    onKeyDown={e => e.key === 'Enter' && saveNote(video.id)}
+                  />
+                  <button onClick={() => saveNote(video.id)} className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4" /> Save
+                  </button>
+                </div>
+              ) : (
+                <div 
+                  className="flex items-start gap-2 cursor-pointer group/note"
+                  onClick={() => startEditing(video)}
+                >
+                  <MessageSquare className={`w-4 h-4 mt-0.5 shrink-0 ${video.notes ? 'text-primary' : 'text-muted-foreground opacity-50'}`} />
+                  <p className={`text-sm flex-1 ${video.notes ? 'text-foreground' : 'text-muted-foreground italic'}`}>
+                    {video.notes || "Add context note (e.g. event-driven, do not repeat)..."}
+                  </p>
+                  <Edit3 className="w-3 h-3 text-muted-foreground opacity-0 group-hover/note:opacity-100 transition-opacity" />
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        
+        {filteredVideos.length === 0 && (
+          <div className="col-span-1 md:col-span-2 p-8 text-center text-muted-foreground border border-dashed border-border rounded-xl">
+            No videos found matching your search.
+          </div>
+        )}
       </div>
     </div>
   );
