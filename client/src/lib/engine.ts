@@ -1,5 +1,14 @@
 import { VideoData } from "./store";
 
+export interface PostPackage {
+  why: string;
+  hook: string;
+  hookVariants: string[];
+  captionStarter: string;
+  ctaVariants: string[];
+  hashtags: string;
+}
+
 export interface GrowthBrief {
   momentum: {
     score: number; // 0-100
@@ -8,93 +17,191 @@ export interface GrowthBrief {
     details: string;
   };
   moves: {
-    leverage: string;
-    reinforcement: string;
-    experiment: string;
+    leverage: PostPackage & { sourceVideoId: string };
+    reinforcement: PostPackage & { sourceVideoId: string };
+    experiment: PostPackage & { theme: string, format: string };
+    structural: PostPackage & { details: string };
   };
   warnings: string[];
-  hookArchetypes: string[];
   penalties: {
     fatigue: number;
     novelty: number;
     repetition: number;
   };
   postingWindows: { day: string; time: string; confidence: string }[];
+  todayGameplan: string[];
+  opportunityScore: number;
 }
 
-export function generateStrategicBrief(videos: VideoData[]): GrowthBrief {
+export function generateStrategicBrief(videos: VideoData[], recentExecutions: any[] = []): GrowthBrief {
   if (!videos || videos.length < 5) {
     return _generateEmptyBrief();
   }
 
-  // Sort videos by date (newest first)
-  const sorted = [...videos].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  // Pre-process videos with theme/format inference and freshness
+  const processedVideos = videos.map(v => {
+    const d = new Date(v.publishedAt);
+    const diffTime = Math.abs(new Date().getTime() - d.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return {
+      ...v,
+      freshness: diffDays,
+      theme: _inferTheme(v.title, v.tags),
+      format: _inferFormat(v.title)
+    };
+  });
+
+  const sorted = [...processedVideos].sort((a, b) => b.viewCount - a.viewCount);
+  const chronSorted = [...processedVideos].sort((a, b) => (a.freshness || 0) - (b.freshness || 0));
   
-  // Recent 3 vs Previous 7
-  const recent = sorted.slice(0, 3);
-  const baseline = sorted.slice(3, 10);
+  const topPerformers = sorted.slice(0, 3);
+  const recentVideos = chronSorted.slice(0, 5);
   
-  const recentAvg = _avg(recent.map(v => v.viewCount));
-  const baselineAvg = _avg(baseline.map(v => v.viewCount));
+  const recentAvg = _avg(recentVideos.map(v => v.viewCount));
+  const overallAvg = _avg(processedVideos.map(v => v.viewCount));
   
   let momentumScore = 50;
   let trend: 'up' | 'down' | 'flat' = 'flat';
   
-  if (baselineAvg > 0) {
-    const ratio = recentAvg / baselineAvg;
+  if (overallAvg > 0) {
+    const ratio = recentAvg / overallAvg;
     if (ratio > 1.2) trend = 'up';
     else if (ratio < 0.8) trend = 'down';
-    
-    // Normalize to 0-100
-    momentumScore = Math.min(100, Math.max(0, Math.round((ratio) * 50)));
+    momentumScore = Math.min(100, Math.max(0, Math.round(ratio * 50)));
   }
 
-  // Analyze titles for keywords/hooks
-  const topPerformers = [...sorted].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
-  const bestTitleWords = topPerformers[0].title.split(' ').filter(w => w.length > 4);
-  const leverageTopic = bestTitleWords.length > 0 ? bestTitleWords[0] : "your core topic";
+  // Find themes/formats we've repeated recently
+  const recentThemes = recentVideos.slice(0, 3).map(v => v.theme);
+  const repetitionPenalty = new Set(recentThemes).size < 3 ? 30 : 0;
+  
+  // Leverage: best performing recent video
+  const leverageTarget = topPerformers[0];
+  // Reinforcement: consistent performer
+  const reinforcementTarget = topPerformers[1] || topPerformers[0];
+  
+  // Experiment: suggest something opposite of the recent repeated theme
+  const popularThemes = ['Tutorial', 'Vlog', 'Review', 'Analysis', 'Story', 'Interview'];
+  const experimentTheme = popularThemes.find(t => !recentThemes.includes(t)) || 'Contra-narrative';
 
-  // Deterministic rule generation
   const brief: GrowthBrief = {
     momentum: {
       score: momentumScore,
       trend,
       label: trend === 'up' ? 'Accelerating' : trend === 'down' ? 'Decelerating' : 'Stable',
-      details: `Recent avg views (${_formatNum(recentAvg)}) is ${trend === 'up' ? 'above' : trend === 'down' ? 'below' : 'matching'} baseline (${_formatNum(baselineAvg)}).`
+      details: `Recent 5 videos average (${_formatNum(recentAvg)}) vs historical average (${_formatNum(overallAvg)}).`
     },
     moves: {
-      leverage: `Double down on concepts related to "${leverageTopic}". This proved highly resonant in your top video.`,
-      reinforcement: `Maintain the structural pacing used in "${topPerformers[1]?.title || 'your recent hits'}".`,
-      experiment: momentumScore > 60 
-        ? "With high momentum, test a controversial take or a tangential niche to capture broader audience."
-        : "Stick to core content pillars. Avoid wild format experiments until momentum stabilizes."
+      leverage: {
+        sourceVideoId: leverageTarget.id,
+        why: `"${leverageTarget.title}" hit above average. Extract a sub-topic from this and dive deeper.`,
+        hook: `I previously talked about [Topic], but I left out the most important part...`,
+        hookVariants: [
+          `The secret behind my [Topic] breakdown...`,
+          `Everyone asks about [Topic], here is the unseen truth.`,
+          `If you liked my thoughts on [Topic], watch this.`
+        ],
+        captionStarter: `Expanding on my recent video about [X], I wanted to share...`,
+        ctaVariants: [`Comment below if you agree!`, `Save this for later.`, `Tag someone who needs to hear this.`],
+        hashtags: `#${leverageTarget.theme?.replace(' ', '') || 'Growth'} #Insights`
+      },
+      reinforcement: {
+        sourceVideoId: reinforcementTarget.id,
+        why: `"${reinforcementTarget.title}" showed strong resonance. Use a similar structural format but a new topic.`,
+        hook: `3 reasons why [New Topic] is exactly like [Old Topic]...`,
+        hookVariants: [
+          `Here is how [New Topic] works, step-by-step.`,
+          `The 3 pillars of [New Topic] you are missing.`,
+          `A definitive guide to [New Topic].`
+        ],
+        captionStarter: `Just like we saw with [Previous Topic], the fundamentals apply here...`,
+        ctaVariants: [`Link in bio for more.`, `What do you think?`, `Share this with a friend.`],
+        hashtags: `#Strategy #Breakdown`
+      },
+      experiment: {
+        theme: experimentTheme,
+        format: 'Short-form / High Energy',
+        why: `Momentum allows for risk. Test the "${experimentTheme}" theme to see if it captures a tangential audience.`,
+        hook: `You probably haven't thought about [Tangential Topic] this way...`,
+        hookVariants: [
+          `An unpopular opinion on [Topic]...`,
+          `Stop doing [X], do [Y] instead.`,
+          `The biggest myth in our industry is...`
+        ],
+        captionStarter: `I'm trying something different today. Let me know if...`,
+        ctaVariants: [`Drop a 🚀 if you want more of this.`, `Sound off below.`, `Follow for more experiments.`],
+        hashtags: `#Experiment #${experimentTheme.replace(' ', '')}`
+      },
+      structural: {
+        details: 'Format Optimization',
+        why: 'Average view duration drops when intros exceed 15 seconds. Cut the fluff.',
+        hook: `[No specific hook - structural adjustment]`,
+        hookVariants: [],
+        captionStarter: `[N/A]`,
+        ctaVariants: [],
+        hashtags: ''
+      }
     },
     warnings: [],
-    hookArchetypes: [
-      "The Contra-Narrative (e.g., 'Why everyone is wrong about [Topic]')",
-      "The Process Breakdown (e.g., 'Step-by-step how I built [X]')",
-      "The Warning (e.g., 'Stop doing [Y] before it ruins your [Z]')"
-    ],
     penalties: {
-      fatigue: _calculateFatigue(sorted),
-      novelty: momentumScore > 70 ? 20 : 80, // high novelty needed if low momentum
-      repetition: 15
+      fatigue: momentumScore < 40 ? 45 : 10,
+      novelty: momentumScore > 70 ? 15 : 60,
+      repetition: repetitionPenalty
     },
-    postingWindows: _extractBestWindows(topPerformers)
+    postingWindows: _extractBestWindows(topPerformers),
+    todayGameplan: [
+      `Draft a script expanding on "${leverageTarget.title}"`,
+      `Brainstorm 3 new topics for the "${reinforcementTarget.format}" format`,
+      `Record a rough take for a ${experimentTheme} concept`
+    ],
+    opportunityScore: Math.min(100, Math.round(momentumScore * 0.8 + (100 - repetitionPenalty) * 0.2))
   };
 
-  // Generate deterministic warnings
-  if (recent[0].viewCount < baselineAvg * 0.5) {
+  if (recentVideos[0].viewCount < overallAvg * 0.5) {
     brief.warnings.push("Severe underperformance on latest drop. Review thumbnail CTR & hook retention.");
   }
   if (trend === 'down') {
     brief.warnings.push("Consecutive drop in viewer interest. Audience may be experiencing format fatigue.");
+  }
+  if (repetitionPenalty > 0) {
+    brief.warnings.push("High repetition penalty: You are using the same themes too often recently.");
   }
   if (brief.warnings.length === 0) {
     brief.warnings.push("No critical warnings. Operations normal.");
   }
 
   return brief;
+}
+
+export function enhanceVideoData(videos: any[]): VideoData[] {
+  return videos.map(v => {
+    const d = new Date(v.publishedAt);
+    const diffTime = Math.abs(new Date().getTime() - d.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return {
+      ...v,
+      freshness: diffDays,
+      theme: _inferTheme(v.title, v.tags),
+      format: _inferFormat(v.title)
+    };
+  });
+}
+
+function _inferTheme(title: string, tags: string[]) {
+  const t = title.toLowerCase();
+  if (t.includes('how to') || t.includes('tutorial') || t.includes('guide')) return 'Tutorial';
+  if (t.includes('review') || t.includes('vs')) return 'Review';
+  if (t.includes('why') || t.includes('truth')) return 'Analysis';
+  if (t.includes('vlog') || t.includes('day in')) return 'Vlog';
+  return 'General';
+}
+
+function _inferFormat(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes('shorts') || t.includes('#shorts')) return 'Shorts';
+  if (t.includes('podcast') || t.includes('interview')) return 'Long-form Discussion';
+  return 'Standard Video';
 }
 
 function _avg(arr: number[]) {
@@ -108,13 +215,7 @@ function _formatNum(num: number) {
   return Math.round(num).toString();
 }
 
-function _calculateFatigue(videos: VideoData[]) {
-  // Simple heuristic: if titles have similar words and views are dropping
-  return 35; // mock deterministic value
-}
-
-function _extractBestWindows(videos: VideoData[]) {
-  // Infer from publish times of best videos
+function _extractBestWindows(videos: any[]) {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const windows = videos.map(v => {
     const d = new Date(v.publishedAt);
@@ -125,7 +226,6 @@ function _extractBestWindows(videos: VideoData[]) {
     };
   });
   
-  // Deduplicate
   const unique = [];
   const seen = new Set();
   for (const w of windows) {
@@ -145,10 +245,16 @@ function _extractBestWindows(videos: VideoData[]) {
 function _generateEmptyBrief(): GrowthBrief {
   return {
     momentum: { score: 0, trend: 'flat', label: 'Insufficient Data', details: 'Need at least 5 synced videos to calculate momentum.' },
-    moves: { leverage: '-', reinforcement: '-', experiment: '-' },
+    moves: { 
+      leverage: { sourceVideoId: '', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
+      reinforcement: { sourceVideoId: '', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }, 
+      experiment: { theme: '-', format: '-', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' },
+      structural: { details: '-', why: '-', hook: '-', hookVariants: [], captionStarter: '-', ctaVariants: [], hashtags: '-' }
+    },
     warnings: ['Sync required to generate insights.'],
-    hookArchetypes: ['-'],
     penalties: { fatigue: 0, novelty: 0, repetition: 0 },
-    postingWindows: []
+    postingWindows: [],
+    todayGameplan: [],
+    opportunityScore: 0
   };
 }

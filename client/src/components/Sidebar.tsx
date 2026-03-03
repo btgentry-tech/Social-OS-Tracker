@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Zap, Settings, Link as LinkIcon, BarChart3 } from "lucide-react";
+import { Zap, Settings, Link as LinkIcon, BookOpen, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function Sidebar() {
@@ -7,8 +7,9 @@ export default function Sidebar() {
 
   const navItems = [
     { name: "Brief", href: "/", icon: Zap },
-    { name: "Analytics", href: "/analytics", icon: BarChart3, disabled: true },
-    { name: "Connectors", href: "/connect", icon: LinkIcon },
+    { name: "Library", href: "/library", icon: Library },
+    { name: "Connect", href: "/connect", icon: LinkIcon },
+    { name: "Playbooks", href: "/playbooks", icon: BookOpen, disabled: true },
     { name: "Settings", href: "/settings", icon: Settings, disabled: true },
   ];
 

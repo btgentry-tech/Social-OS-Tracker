@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
 import Dashboard from "@/pages/dashboard";
 import Connect from "@/pages/connect";
+import Library from "@/pages/library";
 import Sidebar from "@/components/Sidebar";
 
 function Router() {
@@ -18,6 +19,7 @@ function Router() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/connect" component={Connect} />
+            <Route path="/library" component={Library} />
             <Route>
               <div className="flex items-center justify-center h-full">
                 <h1 className="text-2xl font-mono text-muted-foreground">404 - Not Found</h1>

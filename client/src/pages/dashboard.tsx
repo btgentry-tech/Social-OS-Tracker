@@ -1,10 +1,82 @@
-import { useStore } from "@/lib/store";
+import { usePersistedStore } from "@/lib/store";
 import { Link } from "wouter";
-import { ArrowUpRight, TrendingUp, AlertTriangle, Zap, Activity, Clock, FileJson, ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowUpRight, TrendingUp, AlertTriangle, Zap, Activity, Clock, Target, ArrowRight, Copy, CheckCircle2, ListChecks, ThumbsUp, ThumbsDown, Minus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PostPackage } from "@/lib/engine";
+
+function MoveBlock({ title, move, type, onExecute, executions }: { title: string, move: PostPackage, type: any, onExecute: any, executions: any[] }) {
+  const { toast } = useToast();
+  
+  const handleCopy = () => {
+    const content = `Hook: ${move.hook}\nVariants:\n${move.hookVariants.map(v => `- ${v}`).join('\n')}\n\nCaption: ${move.captionStarter}\n\nCTAs:\n${move.ctaVariants.map(v => `- ${v}`).join('\n')}\n\nHashtags: ${move.hashtags}`;
+    navigator.clipboard.writeText(content);
+    toast({ title: "Copied to clipboard", description: "Package ready for posting." });
+  };
+
+  const hasExecuted = executions.some(e => e.type === type && (Date.now() - new Date(e.executedAt).getTime()) < 24 * 60 * 60 * 1000);
+
+  return (
+    <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg flex flex-col h-full relative">
+      <div className="flex justify-between items-start mb-4">
+        <h3 className="font-semibold text-lg flex items-center gap-2">
+          {title}
+        </h3>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="w-6 h-6 rounded-full bg-secondary/50 flex items-center justify-center text-muted-foreground text-xs cursor-help">
+              ?
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            <p>{move.why}</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <p className="text-sm text-muted-foreground mb-6 leading-relaxed flex-1">
+        {move.why}
+      </p>
+
+      <div className="space-y-4 mb-6 text-sm">
+        <div className="bg-secondary/20 p-3 rounded-lg border border-border/30">
+          <span className="text-xs font-mono text-muted-foreground uppercase mb-1 block">Primary Hook</span>
+          <span className="font-medium">{move.hook}</span>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-secondary/20 p-3 rounded-lg border border-border/30">
+            <span className="text-xs font-mono text-muted-foreground uppercase mb-1 block">Caption Starter</span>
+            <span className="line-clamp-2 text-muted-foreground">{move.captionStarter || 'N/A'}</span>
+          </div>
+          <div className="bg-secondary/20 p-3 rounded-lg border border-border/30">
+            <span className="text-xs font-mono text-muted-foreground uppercase mb-1 block">Hashtags</span>
+            <span className="text-primary font-mono text-xs">{move.hashtags || 'N/A'}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-auto">
+        <button onClick={handleCopy} className="flex-1 bg-secondary text-foreground hover:bg-secondary/80 px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer">
+          <Copy className="w-4 h-4" /> Copy Package
+        </button>
+        <button 
+          onClick={() => onExecute(type)}
+          disabled={hasExecuted}
+          className={`px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${hasExecuted ? 'bg-green-500/20 text-green-500 cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
+        >
+          {hasExecuted ? <CheckCircle2 className="w-4 h-4" /> : <Target className="w-4 h-4" />}
+          {hasExecuted ? 'Executed' : 'Execute'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
-  const { brief, videos, lastSyncedAt } = useStore();
+  const { brief, videos, lastSyncedAt, executeMove, addFeedback, executions } = usePersistedStore();
+  const { toast } = useToast();
 
   if (!brief || videos.length === 0) {
     return (
@@ -26,173 +98,151 @@ export default function Dashboard() {
     );
   }
 
-  const { momentum, moves, warnings, penalties, postingWindows } = brief;
+  const { momentum, moves, warnings, penalties, postingWindows, todayGameplan, opportunityScore } = brief;
+
+  const handleExecute = (type: any) => {
+    executeMove({ videoId: '', type });
+    toast({ title: "Move Logged", description: "This execution has been recorded for future analysis." });
+  };
+
+  const handleFeedback = (id: string, fb: 'better' | 'same' | 'worse') => {
+    addFeedback(id, fb);
+    toast({ title: "Feedback Recorded", description: "Engine weights updated." });
+  };
+
+  const recentExecutions = executions.slice(-3).reverse();
 
   return (
-    <div className="max-w-6xl mx-auto p-8 pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500">
-      <header className="flex justify-between items-end mb-10 border-b border-border/40 pb-6">
+    <div className="max-w-7xl mx-auto p-8 pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500">
+      {/* Top Banner */}
+      <header className="bg-card border border-border/50 rounded-xl p-6 mb-8 shadow-lg flex flex-col md:flex-row justify-between md:items-center gap-6">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-secondary/60 border border-border text-xs font-mono text-muted-foreground mb-4">
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-secondary/60 border border-border text-xs font-mono text-muted-foreground mb-3">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             SYSTEM_ACTIVE
           </div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2">Daily Growth Brief</h1>
-          <p className="text-muted-foreground flex items-center gap-2">
-            Deterministic analysis based on {videos.length} recent assets.
-            {lastSyncedAt && (
-              <span className="text-xs px-2 py-0.5 bg-secondary rounded-sm">
-                Synced {formatDistanceToNow(new Date(lastSyncedAt))} ago
-              </span>
-            )}
+          <h1 className="text-3xl font-bold tracking-tight">Daily Growth Brief</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Analyzing {videos.length} videos. Last sync: {lastSyncedAt ? formatDistanceToNow(new Date(lastSyncedAt)) + ' ago' : 'Never'}
           </p>
+        </div>
+
+        <div className="flex gap-8">
+          <div className="flex flex-col">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-mono mb-1 flex items-center gap-1.5">
+              Momentum <TrendingUp className="w-3 h-3" />
+            </span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold tracking-tighter">{momentum.score}</span>
+              <span className={`text-sm font-medium ${momentum.trend === 'up' ? 'text-green-500' : momentum.trend === 'down' ? 'text-destructive' : 'text-yellow-500'}`}>
+                {momentum.label}
+              </span>
+            </div>
+          </div>
+          
+          <div className="w-px bg-border/50 h-12 self-center" />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex flex-col cursor-help">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-mono mb-1 flex items-center gap-1.5">
+                  Opportunity <Zap className="w-3 h-3 text-yellow-500" />
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold tracking-tighter text-yellow-500">{opportunityScore}</span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Calculated based on momentum and lack of recent theme repetition.</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {/* Momentum Card */}
-        <div className="col-span-1 md:col-span-2 bg-card border border-border/50 rounded-xl p-6 relative overflow-hidden group shadow-lg shadow-black/5">
-          <div className="absolute top-0 right-0 p-32 opacity-5 pointer-events-none transition-transform duration-700 group-hover:scale-110">
-            <TrendingUp className="w-full h-full" />
-          </div>
-          
-          <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
-            <Activity className="w-4 h-4" /> System Momentum
-          </h2>
-          
-          <div className="flex items-end gap-6 mb-4">
-            <div className="text-7xl font-bold tracking-tighter tabular-nums leading-none text-transparent bg-clip-text bg-gradient-to-br from-foreground to-foreground/50">
-              {momentum.score}
-            </div>
-            <div className="mb-2">
-              <div className={`text-lg font-medium flex items-center gap-1 ${
-                momentum.trend === 'up' ? 'text-green-500' : momentum.trend === 'down' ? 'text-destructive' : 'text-yellow-500'
-              }`}>
-                {momentum.trend === 'up' ? <ArrowUpRight className="w-5 h-5" /> : momentum.trend === 'down' ? <ArrowUpRight className="w-5 h-5 rotate-90" /> : <ArrowRight className="w-5 h-5" />}
-                {momentum.label}
-              </div>
-            </div>
-          </div>
-          
-          <p className="text-muted-foreground max-w-md">{momentum.details}</p>
-        </div>
-
-        {/* Penalties */}
-        <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg shadow-black/5 flex flex-col justify-between">
-          <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" /> Friction Metrics
-          </h2>
-          
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-muted-foreground">Format Fatigue</span>
-                <span className="font-mono">{penalties.fatigue}%</span>
-              </div>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div className="h-full bg-orange-500 rounded-full" style={{ width: `${penalties.fatigue}%` }} />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-muted-foreground">Novelty Decay</span>
-                <span className="font-mono">{penalties.novelty}%</span>
-              </div>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${penalties.novelty}%` }} />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-muted-foreground">Repetition Penalty</span>
-                <span className="font-mono">{penalties.repetition}%</span>
-              </div>
-              <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                <div className="h-full bg-red-500 rounded-full" style={{ width: `${penalties.repetition}%` }} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Strategic Moves */}
-        <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg shadow-black/5">
-          <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
-            <Zap className="w-4 h-4" /> Recommended Moves
-          </h2>
-          
-          <div className="space-y-6">
-            <div className="flex gap-4">
-              <div className="shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">L</div>
-              <div>
-                <h3 className="font-semibold mb-1 text-sm text-primary">Leverage Move</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed">{moves.leverage}</p>
-              </div>
-            </div>
-            
-            <div className="w-full h-px bg-border/40" />
-            
-            <div className="flex gap-4">
-              <div className="shrink-0 w-8 h-8 rounded bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm">R</div>
-              <div>
-                <h3 className="font-semibold mb-1 text-sm text-blue-500">Reinforcement Move</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed">{moves.reinforcement}</p>
-              </div>
-            </div>
-
-            <div className="w-full h-px bg-border/40" />
-
-            <div className="flex gap-4">
-              <div className="shrink-0 w-8 h-8 rounded bg-purple-500/10 text-purple-500 flex items-center justify-center font-bold text-sm">E</div>
-              <div>
-                <h3 className="font-semibold mb-1 text-sm text-purple-500">Experiment Move</h3>
-                <p className="text-muted-foreground text-sm leading-relaxed">{moves.experiment}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6 flex flex-col">
-          {/* Warnings */}
-          <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg shadow-black/5 flex-1">
-            <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" /> System Warnings
-            </h2>
-            <ul className="space-y-3">
-              {warnings.map((w, i) => (
-                <li key={i} className="flex gap-3 text-sm text-muted-foreground bg-secondary/30 p-3 rounded-lg border border-border/50">
-                  <div className="mt-0.5 text-yellow-500"><AlertTriangle className="w-4 h-4" /></div>
-                  <span className="leading-relaxed">{w}</span>
-                </li>
-              ))}
+      {warnings.length > 0 && warnings[0] !== "No critical warnings. Operations normal." && (
+        <div className="mb-8 bg-destructive/10 border border-destructive/30 rounded-xl p-4 flex items-start gap-3 text-destructive">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-semibold text-sm mb-1">System Warnings</h4>
+            <ul className="list-disc list-inside text-sm space-y-1 ml-4 text-destructive/90">
+              {warnings.map((w, i) => <li key={i}>{w}</li>)}
             </ul>
           </div>
+        </div>
+      )}
 
+      {/* Main Blocks */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <MoveBlock title="Leverage Move" move={moves.leverage} type="leverage" onExecute={handleExecute} executions={executions} />
+        <MoveBlock title="Reinforcement Move" move={moves.reinforcement} type="reinforcement" onExecute={handleExecute} executions={executions} />
+        <MoveBlock title="Experiment Move" move={moves.experiment} type="experiment" onExecute={handleExecute} executions={executions} />
+        <MoveBlock title="Structural Adj." move={moves.structural} type="structural" onExecute={handleExecute} executions={executions} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Gameplan */}
+        <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg lg:col-span-2">
+          <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
+            <ListChecks className="w-4 h-4" /> Today's Gameplan
+          </h2>
+          <div className="space-y-3">
+            {todayGameplan.map((task, i) => (
+              <label key={i} className="flex items-start gap-3 p-3 rounded-lg border border-border/30 bg-secondary/10 hover:bg-secondary/20 transition-colors cursor-pointer group">
+                <input type="checkbox" className="mt-1 w-4 h-4 rounded border-border text-primary focus:ring-primary/20" />
+                <span className="text-sm group-hover:text-foreground transition-colors">{task}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-6">
           {/* Posting Windows */}
-          <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg shadow-black/5 flex-1">
-            <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-6 flex items-center gap-2">
-              <Clock className="w-4 h-4" /> Optimal Release Windows
+          <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg">
+            <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Clock className="w-4 h-4" /> Optimal Windows
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
               {postingWindows.map((pw, i) => (
-                <div key={i} className="border border-border/50 bg-secondary/20 p-4 rounded-lg text-center flex flex-col items-center justify-center">
-                  <span className="font-semibold block">{pw.day}</span>
-                  <span className="text-2xl font-mono text-primary font-light tracking-tighter my-1">{pw.time}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest">{pw.confidence}</span>
+                <div key={i} className="flex justify-between items-center p-2 rounded bg-secondary/20 border border-border/30">
+                  <span className="text-sm font-medium">{pw.day}</span>
+                  <span className="text-sm font-mono text-primary">{pw.time}</span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Raw Data Dump (Proving it's not mockup) */}
-      <div className="mt-12 bg-black border border-border/50 rounded-xl p-6 overflow-hidden relative">
-        <h2 className="text-xs font-mono text-muted-foreground mb-4 flex items-center gap-2">
-          <FileJson className="w-3 h-3" /> Raw JSON Persisted State
-        </h2>
-        <div className="max-h-48 overflow-y-auto font-mono text-[10px] text-muted-foreground/60 p-4 bg-[#0a0a0a] rounded border border-white/5">
-          <pre>{JSON.stringify(videos, null, 2)}</pre>
+          
+          {/* Feedback loop */}
+          {recentExecutions.length > 0 && (
+            <div className="bg-card border border-border/50 rounded-xl p-6 shadow-lg">
+              <h2 className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Target className="w-4 h-4" /> Recent Executions
+              </h2>
+              <div className="space-y-3">
+                {recentExecutions.map(ex => (
+                  <div key={ex.id} className="text-xs p-3 rounded bg-secondary/10 border border-border/30">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-mono text-primary capitalize">{ex.type}</span>
+                      <span className="text-muted-foreground">{formatDistanceToNow(new Date(ex.executedAt))} ago</span>
+                    </div>
+                    {!ex.feedback ? (
+                      <div className="flex gap-1 pt-2 border-t border-border/30 mt-2">
+                        <span className="text-[10px] text-muted-foreground mr-auto self-center">Result?</span>
+                        <button onClick={() => handleFeedback(ex.id, 'better')} className="p-1.5 hover:bg-green-500/20 text-green-500 rounded"><ThumbsUp className="w-3 h-3" /></button>
+                        <button onClick={() => handleFeedback(ex.id, 'same')} className="p-1.5 hover:bg-secondary text-muted-foreground rounded"><Minus className="w-3 h-3" /></button>
+                        <button onClick={() => handleFeedback(ex.id, 'worse')} className="p-1.5 hover:bg-destructive/20 text-destructive rounded"><ThumbsDown className="w-3 h-3" /></button>
+                      </div>
+                    ) : (
+                      <div className={`mt-2 pt-2 border-t border-border/30 text-[10px] uppercase tracking-wider font-mono ${ex.feedback === 'better' ? 'text-green-500' : ex.feedback === 'worse' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        Feedback: {ex.feedback}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

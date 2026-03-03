@@ -11,44 +11,87 @@ export interface VideoData {
   commentCount: number;
   tags: string[];
   thumbnail: string;
+  
+  // Inferred
+  theme?: string;
+  format?: string;
+  freshness?: number; // days ago
 }
 
-interface AppState {
-  youtubeApiKey: string;
+export interface ExecutedMove {
+  id: string;
+  videoId: string;
+  type: 'leverage' | 'reinforcement' | 'experiment' | 'structural';
+  executedAt: string;
+  feedback?: 'better' | 'same' | 'worse';
+}
+
+export interface QueuedItem {
+  id: string;
+  videoId: string;
+  type: 'leverage' | 'experiment';
+  addedAt: string;
+}
+
+interface PersistedState {
   youtubeChannelId: string;
   lastSyncedAt: string | null;
   videos: VideoData[];
   brief: GrowthBrief | null;
-  isSyncing: boolean;
+  queue: QueuedItem[];
+  executions: ExecutedMove[];
   
-  setCredentials: (apiKey: string, channelId: string) => void;
+  setChannelId: (channelId: string) => void;
   setSyncData: (videos: VideoData[], brief: GrowthBrief) => void;
-  setSyncing: (status: boolean) => void;
+  queueItem: (item: Omit<QueuedItem, 'id' | 'addedAt'>) => void;
+  executeMove: (move: Omit<ExecutedMove, 'id' | 'executedAt'>) => void;
+  addFeedback: (executionId: string, feedback: 'better' | 'same' | 'worse') => void;
   clearData: () => void;
 }
 
-export const useStore = create<AppState>()(
+interface SessionState {
+  youtubeApiKey: string;
+  isSyncing: boolean;
+  setApiKey: (key: string) => void;
+  setSyncing: (status: boolean) => void;
+}
+
+export const usePersistedStore = create<PersistedState>()(
   persist(
     (set) => ({
-      youtubeApiKey: "",
       youtubeChannelId: "",
       lastSyncedAt: null,
       videos: [],
       brief: null,
-      isSyncing: false,
+      queue: [],
+      executions: [],
       
-      setCredentials: (apiKey, channelId) => set({ youtubeApiKey: apiKey, youtubeChannelId: channelId }),
+      setChannelId: (channelId) => set({ youtubeChannelId: channelId }),
       setSyncData: (videos, brief) => set({ 
         videos, 
         brief, 
-        lastSyncedAt: new Date().toISOString(),
-        isSyncing: false
+        lastSyncedAt: new Date().toISOString()
       }),
-      setSyncing: (status) => set({ isSyncing: status }),
-      clearData: () => set({ youtubeApiKey: "", youtubeChannelId: "", lastSyncedAt: null, videos: [], brief: null }),
+      queueItem: (item) => set((state) => ({
+        queue: [...state.queue, { ...item, id: crypto.randomUUID(), addedAt: new Date().toISOString() }]
+      })),
+      executeMove: (move) => set((state) => ({
+        executions: [...state.executions, { ...move, id: crypto.randomUUID(), executedAt: new Date().toISOString() }]
+      })),
+      addFeedback: (executionId, feedback) => set((state) => ({
+        executions: state.executions.map(e => e.id === executionId ? { ...e, feedback } : e)
+      })),
+      clearData: () => set({ youtubeChannelId: "", lastSyncedAt: null, videos: [], brief: null, queue: [], executions: [] }),
     }),
     {
-      name: "social-os-storage",
+      name: "social-os-db",
     }
   )
 );
+
+export const useSessionStore = create<SessionState>((set) => ({
+  youtubeApiKey: "",
+  isSyncing: false,
+  setApiKey: (key) => set({ youtubeApiKey: key }),
+  setSyncing: (status) => set({ isSyncing: status })
+}));
