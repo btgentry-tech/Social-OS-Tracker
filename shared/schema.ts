@@ -40,6 +40,7 @@ export const videos = pgTable("videos", {
   opportunityScore: real("opportunity_score"),
   scoreBreakdown: jsonb("score_breakdown"),
   lastRecommendedAt: text("last_recommended_at"),
+  platform: varchar("platform", { length: 16 }).default("youtube"),
 });
 
 export const insertVideoSchema = createInsertSchema(videos).omit({});

@@ -55,6 +55,7 @@ export class DatabaseStorage implements IStorage {
           theme: video.theme,
           format: video.format,
           performanceRatio: video.performanceRatio,
+          platform: video.platform,
         }
       })
       .returning();

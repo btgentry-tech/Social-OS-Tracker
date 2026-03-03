@@ -3,15 +3,27 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
 import {
-  AlertTriangle, Zap, Activity, ThumbsUp, ThumbsDown, Minus,
+  AlertTriangle, Zap, Activity, ThumbsUp, ThumbsDown,
   Copy, Info, ChevronDown, ChevronUp, TrendingUp, Calendar,
   Clock, Star, RotateCcw, Wrench, Archive, RefreshCw,
-  Eye, Hash, MessageSquare, Sparkles
+  Eye, Sparkles, CheckCircle2, ChevronRight, X, Minus
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { addDays, format, startOfWeek, isSameDay, formatDistanceToNow } from "date-fns";
 
 const CLASS_STYLES: Record<string, { color: string; bg: string; border: string; icon: any }> = {
   "Evergreen Winner": { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: Star },
@@ -19,12 +31,6 @@ const CLASS_STYLES: Record<string, { color: string; bg: string; border: string; 
   "Retry (Second Shot)": { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: RefreshCw },
   "Restructure": { color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", icon: Wrench },
   "Archive": { color: "text-neutral-400", bg: "bg-neutral-500/10", border: "border-neutral-500/20", icon: Archive },
-};
-
-const CONFIDENCE_STYLES: Record<string, string> = {
-  High: "text-green-400 bg-green-500/10 border-green-500/20",
-  Medium: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-  Low: "text-neutral-400 bg-neutral-500/10 border-neutral-500/20",
 };
 
 function ScoreBar({ value, max = 100 }: { value: number; max?: number }) {
@@ -94,7 +100,7 @@ function ScoreBreakdownPanel({ breakdown }: { breakdown: any }) {
   );
 }
 
-function PlanDetails({ plan, classLabel }: { plan: any; classLabel: string }) {
+function PlanDetails({ plan, onExecute, videoId, hideExecute = false }: { plan: any; onExecute: (classLabel: string, videoId: string) => void; videoId: string; hideExecute?: boolean }) {
   if (!plan) return null;
   const { toast } = useToast();
 
@@ -108,261 +114,207 @@ function PlanDetails({ plan, classLabel }: { plan: any; classLabel: string }) {
     toast({ title: "Copied to clipboard" });
   };
 
+  const primaryAction = plan.classLabel === "Evergreen Winner" ? "Repost & Repurpose"
+    : plan.classLabel === "Repost Candidate" ? "Repost This"
+    : plan.classLabel === "Retry (Second Shot)" ? "Retry With Changes"
+    : plan.classLabel === "Restructure" ? "Restructure This"
+    : "Archived";
+
   return (
-    <div className="space-y-4">
-      {plan.hookVariants?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Hook Variants</span>
-          <ul className="space-y-1.5">
-            {plan.hookVariants.map((h: string, i: number) => (
-              <li key={i} className="text-sm text-foreground bg-secondary/20 px-3 py-2 rounded border border-border/20">
-                {h}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          {plan.hookVariants?.length > 0 && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Hook Variants</span>
+              <ul className="space-y-1.5">
+                {plan.hookVariants.map((h: string, i: number) => (
+                  <li key={i} className="text-sm text-foreground bg-secondary/20 px-3 py-2 rounded border border-border/20">
+                    {h}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-      {plan.captionStarter && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-1">Caption Starter</span>
-          <p className="text-sm text-muted-foreground">{plan.captionStarter}</p>
-        </div>
-      )}
+          {plan.captionStarter && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-1">Caption Starter</span>
+              <p className="text-sm text-muted-foreground">{plan.captionStarter}</p>
+            </div>
+          )}
 
-      {plan.ctaVariants?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-1">Call-to-Action Options</span>
-          <ul className="space-y-1">
-            {plan.ctaVariants.map((c: string, i: number) => (
-              <li key={i} className="text-sm text-muted-foreground">- {c}</li>
-            ))}
-          </ul>
+          {plan.ctaVariants?.length > 0 && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-1">Call-to-Action Options</span>
+              <ul className="space-y-1">
+                {plan.ctaVariants.map((c: string, i: number) => (
+                  <li key={i} className="text-sm text-muted-foreground">- {c}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      )}
 
-      {plan.hashtagPack?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-1">Hashtags</span>
-          <div className="flex flex-wrap gap-1.5">
-            {plan.hashtagPack.map((h: string, i: number) => (
-              <span key={i} className="text-xs bg-secondary/40 text-muted-foreground px-2 py-0.5 rounded">
-                {h}
-              </span>
-            ))}
-          </div>
+        <div className="space-y-4">
+          {plan.specificChanges?.length > 0 && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Recommended Changes</span>
+              <ul className="space-y-1.5">
+                {plan.specificChanges.map((c: string, i: number) => (
+                  <li key={i} className="text-sm text-foreground flex gap-2">
+                    <Wrench className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" /> {c}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {plan.repurposePlan?.length > 0 && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Repurpose Plan</span>
+              <ul className="space-y-1">
+                {plan.repurposePlan.map((r: string, i: number) => (
+                  <li key={i} className="text-sm text-muted-foreground flex gap-2">
+                    <span className="text-green-400 shrink-0">+</span> {r}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {plan.sequelIdeas?.length > 0 && (
+            <div>
+              <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Sequel Ideas</span>
+              <ul className="space-y-1">
+                {plan.sequelIdeas.map((s: string, i: number) => (
+                  <li key={i} className="text-sm text-muted-foreground flex gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" /> {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {plan.specificChanges?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Recommended Changes</span>
-          <ul className="space-y-1.5">
-            {plan.specificChanges.map((c: string, i: number) => (
-              <li key={i} className="text-sm text-foreground flex gap-2">
-                <Wrench className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" /> {c}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {plan.repurposePlan?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Repurpose Plan</span>
-          <ul className="space-y-1">
-            {plan.repurposePlan.map((r: string, i: number) => (
-              <li key={i} className="text-sm text-muted-foreground flex gap-2">
-                <span className="text-green-400 shrink-0">+</span> {r}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {plan.sequelIdeas?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Sequel Ideas</span>
-          <ul className="space-y-1">
-            {plan.sequelIdeas.map((s: string, i: number) => (
-              <li key={i} className="text-sm text-muted-foreground flex gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" /> {s}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {plan.repostCadence && (
-        <div className="text-sm text-muted-foreground bg-green-500/5 px-3 py-2 rounded border border-green-500/10">
-          <Clock className="w-3.5 h-3.5 inline mr-1.5 text-green-400" />
-          {plan.repostCadence}
-        </div>
-      )}
-
-      {plan.newFraming && (
-        <div className="text-sm text-foreground bg-orange-500/5 px-3 py-2 rounded border border-orange-500/10">
-          <Wrench className="w-3.5 h-3.5 inline mr-1.5 text-orange-400" />
-          {plan.newFraming}
-        </div>
-      )}
-
-      {plan.archiveReason && (
-        <div className="text-sm text-muted-foreground bg-neutral-500/5 px-3 py-2 rounded border border-neutral-500/10">
-          <Archive className="w-3.5 h-3.5 inline mr-1.5 text-neutral-400" />
-          {plan.archiveReason}
-        </div>
-      )}
-
-      {plan.extractedPattern && (
-        <div className="text-sm text-muted-foreground italic bg-secondary/10 px-3 py-2 rounded">
-          {plan.extractedPattern}
-        </div>
-      )}
-
-      {plan.scheduleSlots?.length > 0 && (
-        <div>
-          <span className="text-[10px] uppercase text-muted-foreground font-mono block mb-2">Posting Slots</span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-            {plan.scheduleSlots.slice(0, 3).map((s: any, i: number) => (
-              <div key={i} className="text-xs bg-secondary/20 px-2 py-1.5 rounded border border-border/20 text-center">
-                <div className="font-medium text-foreground">{s.day.split(",")[0]}</div>
-                <div className="text-muted-foreground">{s.time}</div>
-                <div className={`text-[9px] mt-0.5 ${s.label === "Prime slot" ? "text-green-400" : "text-muted-foreground"}`}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <button
-        onClick={handleCopyAll}
-        className="w-full mt-2 py-2 bg-secondary/50 hover:bg-secondary text-foreground text-sm font-medium rounded flex items-center justify-center gap-2 transition-colors border border-border/30"
-        data-testid="button-copy-plan"
-      >
-        <Copy className="w-3.5 h-3.5" /> Copy All Assets
-      </button>
+      <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-border/30">
+        <Button
+          onClick={handleCopyAll}
+          variant="secondary"
+          className="flex-1"
+          data-testid="button-copy-plan"
+        >
+          <Copy className="w-4 h-4 mr-2" /> Copy All Assets
+        </Button>
+        {!hideExecute && plan.classLabel !== "Archive" && (
+          <Button
+            onClick={() => onExecute(plan.classLabel, videoId)}
+            className="flex-1"
+            data-testid={`button-execute-${videoId}`}
+          >
+            <CheckCircle2 className="w-4 h-4 mr-2" /> Mark Done: {primaryAction}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
 
-function OpportunityRow({ opp, videos, onExecute, rank }: {
+function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
   opp: any;
-  videos: any[];
+  video: any;
   onExecute: (classLabel: string, videoId: string) => void;
-  rank: number;
+  onOpenPlan: (opp: any) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const style = CLASS_STYLES[opp.classLabel] || CLASS_STYLES["Archive"];
-  const confStyle = CONFIDENCE_STYLES[opp.confidence] || CONFIDENCE_STYLES["Low"];
   const ClassIcon = style.icon;
-  const video = videos.find((v: any) => v.id === opp.videoId);
-  const topReasons = (opp.reasons || []).slice(0, 2);
+  const oneLiner = opp.reasons?.[0] || "High-potential opportunity for growth.";
 
-  const primaryAction = opp.classLabel === "Evergreen Winner" ? "Repost & Repurpose"
-    : opp.classLabel === "Repost Candidate" ? "Repost This"
-    : opp.classLabel === "Retry (Second Shot)" ? "Retry With Changes"
-    : opp.classLabel === "Restructure" ? "Restructure This"
-    : "Archived";
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const plan = opp.plan;
+    const parts: string[] = [];
+    if (plan.hookVariants?.length) parts.push(`Hooks:\n${plan.hookVariants.map((h: string) => `- ${h}`).join("\n")}`);
+    if (plan.captionStarter) parts.push(`Caption: ${plan.captionStarter}`);
+    if (plan.ctaVariants?.length) parts.push(`CTAs:\n${plan.ctaVariants.map((c: string) => `- ${c}`).join("\n")}`);
+    navigator.clipboard.writeText(parts.join("\n\n"));
+  };
+
+  return (
+    <Card className="overflow-hidden border-border/40 hover:border-primary/40 transition-all group" data-testid={`card-top-opp-${opp.videoId}`}>
+      <CardContent className="p-0">
+        <div className="relative aspect-video overflow-hidden bg-secondary">
+          {video?.thumbnailUrl ? (
+            <img src={video.thumbnailUrl} alt={opp.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground">No Thumbnail</div>
+          )}
+          <div className="absolute top-2 left-2 flex gap-1.5">
+            <Badge className={cn("uppercase text-[10px] font-bold border", style.bg, style.color, style.border)}>
+              <ClassIcon className="w-3 h-3 mr-1" /> {opp.classLabel}
+            </Badge>
+          </div>
+          <div className="absolute top-2 right-2">
+            <Badge variant="secondary" className="bg-black/60 backdrop-blur-md text-yellow-400 border-none font-bold">
+              {opp.opportunityScore}
+            </Badge>
+          </div>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <h3 className="font-bold text-sm line-clamp-1 mb-1" title={opp.title}>{opp.title}</h3>
+            <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">{oneLiner}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Button size="sm" className="w-full text-xs font-bold" onClick={() => onOpenPlan(opp)} data-testid={`button-open-plan-${opp.videoId}`}>
+              Open Plan
+            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" className="flex-1 text-[10px] px-0" onClick={handleCopy} data-testid={`button-copy-package-${opp.videoId}`}>
+                <Copy className="w-3 h-3 mr-1" /> Copy Package
+              </Button>
+              <Button size="sm" variant="secondary" className="flex-1 text-[10px] px-0" onClick={() => onExecute(opp.classLabel, opp.videoId)} data-testid={`button-mark-done-${opp.videoId}`}>
+                <CheckCircle2 className="w-3 h-3 mr-1" /> Mark Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CalendarDay({ day, plan, onClick }: { day: Date; plan: any; onClick: () => void }) {
+  const isToday = isSameDay(day, new Date());
+  const dayName = format(day, "EEE");
+  const dayNum = format(day, "d");
 
   return (
     <div
-      className={`bg-card border rounded-xl overflow-hidden transition-all ${
-        rank === 0 ? "border-primary/40 shadow-[0_4px_20px_rgba(255,255,255,0.03)]" : "border-border/40"
-      }`}
-      data-testid={`card-opportunity-${opp.videoId}`}
+      className={cn(
+        "flex flex-col gap-2 p-3 rounded-xl border border-border/40 min-h-[120px] transition-all cursor-pointer hover:bg-secondary/20",
+        isToday ? "bg-primary/5 border-primary/30 ring-1 ring-primary/20" : "bg-card/50"
+      )}
+      onClick={onClick}
+      data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
     >
-      <div
-        className="flex items-start gap-3 p-4 cursor-pointer hover:bg-secondary/5 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-        data-testid={`button-expand-${opp.videoId}`}
-      >
-        {video?.thumbnailUrl ? (
-          <img src={video.thumbnailUrl} alt={opp.title} className="w-24 h-[54px] object-cover rounded bg-secondary shrink-0" data-testid={`img-thumb-${opp.videoId}`} />
-        ) : (
-          <div className="w-24 h-[54px] rounded bg-secondary flex items-center justify-center shrink-0">
-            <span className="text-[10px] text-muted-foreground">No img</span>
-          </div>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${style.bg} ${style.color} border ${style.border}`}>
-              <ClassIcon className="w-3 h-3" /> {opp.classLabel}
-            </span>
-            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] uppercase font-bold border ${confStyle}`}>
-              {opp.confidence}
-            </span>
-            {rank === 0 && (
-              <span className="inline-flex px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-primary/20 text-primary border border-primary/30">
-                Top Pick
-              </span>
-            )}
-          </div>
-          <h3 className="font-semibold text-sm line-clamp-1 mb-1" title={opp.title} data-testid={`text-title-${opp.videoId}`}>
-            {opp.title}
-          </h3>
-          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-            {video && (
-              <span className="flex items-center gap-1">
-                <Eye className="w-3 h-3" /> {video.viewCount?.toLocaleString()}
-              </span>
-            )}
-            <span>{opp.viewsRatio}x avg</span>
-            <span>{opp.freshnessDays}d old</span>
-          </div>
-          {topReasons.length > 0 && (
-            <div className="mt-2 space-y-0.5">
-              {topReasons.map((r: string, i: number) => (
-                <p key={i} className="text-xs text-muted-foreground leading-relaxed line-clamp-1">{r}</p>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="text-center cursor-help" data-testid={`text-score-${opp.videoId}`}>
-                <div className="text-xl font-bold text-yellow-400 leading-none">{opp.opportunityScore}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">/100</div>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs p-3">
-              <p className="text-xs">Opportunity score based on views performance, timing, novelty, thumbnail and hook quality.</p>
-            </TooltipContent>
-          </Tooltip>
-          {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-        </div>
+      <div className="flex justify-between items-center">
+        <span className={cn("text-[10px] uppercase font-bold tracking-wider", isToday ? "text-primary" : "text-muted-foreground")}>
+          {dayName}
+        </span>
+        <span className={cn("text-sm font-bold", isToday && "text-primary")}>{dayNum}</span>
       </div>
-
-      {expanded && (
-        <div className="border-t border-border/30 bg-secondary/5 p-4 space-y-5 animate-in slide-in-from-top-2 fade-in duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-3 flex items-center gap-1.5">
-                <Info className="w-3 h-3" /> How We Decided
-              </h4>
-              <ScoreBreakdownPanel breakdown={opp.scoreBreakdown} />
-            </div>
-            <div>
-              <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-3 flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-primary" /> Plan
-              </h4>
-              <PlanDetails plan={opp.plan} classLabel={opp.classLabel} />
-            </div>
-          </div>
-
-          {opp.classLabel !== "Archive" && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onExecute(opp.classLabel, opp.videoId); }}
-              className="w-full py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 transition-all cursor-pointer"
-              data-testid={`button-execute-${opp.videoId}`}
-            >
-              <Zap className="w-4 h-4" />
-              Mark Executed: {primaryAction}
-            </button>
-          )}
+      {plan ? (
+        <div className="mt-1 space-y-1.5">
+          <Badge variant="outline" className="text-[9px] h-4 px-1 border-primary/30 text-primary uppercase leading-none">
+            {plan.label}
+          </Badge>
+          <p className="text-[11px] leading-tight font-medium text-foreground line-clamp-3">{plan.title}</p>
+        </div>
+      ) : (
+        <div className="mt-auto">
+          <span className="text-[10px] text-muted-foreground italic">Rest Day</span>
         </div>
       )}
     </div>
@@ -373,7 +325,8 @@ export default function Dashboard() {
   const { youtubeChannelId } = usePersistedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [classFilter, setClassFilter] = useState<string>("all");
+  const [showAll, setShowAll] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analyze", youtubeChannelId],
@@ -418,6 +371,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/executions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/analyze"] });
       toast({ title: "Action marked as executed", description: "Come back later to rate the result." });
+      setSelectedPlan(null);
     },
   });
 
@@ -436,6 +390,28 @@ export default function Dashboard() {
     },
   });
 
+  const calendarPlans = useMemo(() => {
+    if (!analysis?.opportunities || !analysis?.next7DaysPlan) return [];
+    
+    const weekStart = startOfWeek(new Date());
+    return Array.from({ length: 7 }).map((_, i) => {
+      const day = addDays(weekStart, i);
+      const slot = analysis.next7DaysPlan[i];
+      if (!slot) return { day, plan: null };
+
+      // Map opportunities to slots (heuristic: top opps first)
+      const actionableOpps = analysis.opportunities.filter((o: any) => 
+        o.classLabel !== "Archive" && o.confidence !== "Low"
+      );
+      const opp = actionableOpps[i % actionableOpps.length];
+
+      return {
+        day,
+        plan: opp ? { ...slot, title: opp.title, opp } : null
+      };
+    });
+  }, [analysis]);
+
   if (!youtubeChannelId || (!analysis && !isLoading)) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500">
@@ -447,9 +423,9 @@ export default function Dashboard() {
           Connect your YouTube channel to see exactly what you should do next to grow your audience.
         </p>
         <Link href="/connect">
-          <button className="bg-primary text-primary-foreground px-6 py-3 rounded-md font-bold flex items-center gap-2 hover:bg-primary/90 transition-all hover:scale-105 active:scale-95 cursor-pointer" data-testid="button-connect">
+          <Button size="lg" className="font-bold gap-2" data-testid="button-connect">
             <Zap className="w-5 h-5" /> Connect YouTube
-          </button>
+          </Button>
         </Link>
       </div>
     );
@@ -457,51 +433,28 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="max-w-5xl mx-auto p-4 md:p-8 pt-8 pb-20 animate-pulse">
+      <div className="max-w-6xl mx-auto p-4 md:p-8 pt-8 pb-20 animate-pulse">
         <div className="h-10 bg-secondary/30 rounded w-1/3 mb-4" />
         <div className="h-6 bg-secondary/20 rounded w-2/3 mb-10" />
-        <div className="h-32 bg-secondary/10 rounded mb-6" />
-        <div className="space-y-4">
-          {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="bg-card border border-border/30 rounded-xl h-24" />
-          ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          {[1, 2, 3].map(i => <div key={i} className="aspect-[4/5] bg-card border rounded-xl" />)}
+        </div>
+        <div className="h-8 bg-secondary/20 rounded w-1/4 mb-6" />
+        <div className="grid grid-cols-7 gap-4">
+          {[1, 2, 3, 4, 5, 6, 7].map(i => <div key={i} className="h-32 bg-card border rounded-xl" />)}
         </div>
       </div>
     );
   }
 
   const opportunities = analysis?.opportunities || [];
-  const next7Days = analysis?.next7DaysPlan || [];
-  const warnings = analysis?.warnings || [];
+  const top3 = opportunities
+    .filter((o: any) => o.classLabel !== "Archive" && o.confidence !== "Low")
+    .slice(0, 3);
+  
+  const seasonalInsights = analysis?.seasonalInsights || [];
   const momentum = analysis?.momentum || { score: 0, trend: "flat", label: "Need Data", details: "" };
   const overallScore = analysis?.overallOpportunityScore || 0;
-  const videoCount = analysis?.videoCount || 0;
-  const lastSync = analysis?.lastSync;
-  const winnerCount = analysis?.winnerCount || 0;
-
-  if (opportunities.length === 0) {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center">
-        <Activity className="w-10 h-10 text-muted-foreground opacity-50 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Not enough data yet</h1>
-        <p className="text-muted-foreground mb-6">Sync at least 3 videos to generate your analysis.</p>
-        <Link href="/connect">
-          <button className="bg-primary text-primary-foreground px-6 py-3 rounded-md font-bold" data-testid="button-sync-more">
-            Go to Connect
-          </button>
-        </Link>
-      </div>
-    );
-  }
-
-  const classCounts: Record<string, number> = {};
-  for (const o of opportunities) {
-    classCounts[o.classLabel] = (classCounts[o.classLabel] || 0) + 1;
-  }
-
-  const filteredOpps = classFilter === "all"
-    ? opportunities
-    : opportunities.filter((o: any) => o.classLabel === classFilter);
 
   const handleExecute = (classLabel: string, videoId: string) => {
     executeMutation.mutate({ type: classLabel.toLowerCase().replace(/\s+/g, "_"), videoId });
@@ -510,153 +463,184 @@ export default function Dashboard() {
   const recentExecs = executions.slice(0, 3);
 
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-8 pt-8 md:pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500">
-      {warnings.length > 0 && (
-        <div className="mb-6 bg-destructive/10 border border-destructive/30 rounded-xl p-4 flex flex-col gap-2" data-testid="card-warnings">
-          <div className="flex items-center gap-2 text-destructive font-bold text-sm">
-            <AlertTriangle className="w-4 h-4" /> Warnings
-          </div>
-          <ul className="list-disc list-inside space-y-0.5 text-sm text-destructive/90 ml-1">
-            {warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
-          </ul>
-        </div>
-      )}
-
-      <header className="mb-8 flex flex-col md:flex-row justify-between md:items-end gap-4 border-b border-border/40 pb-5">
+    <div className="max-w-6xl mx-auto p-4 md:p-8 pt-8 md:pt-10 pb-20 animate-in slide-in-from-bottom-4 fade-in duration-500 space-y-10">
+      <header className="flex flex-col md:flex-row justify-between md:items-end gap-6 border-b border-border/40 pb-8">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2" data-testid="text-brief-title">
-            Your Action Plan
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2" data-testid="text-dashboard-title">
+            Today + This Week
           </h1>
           <p className="text-muted-foreground">
-            {videoCount} videos analyzed. {winnerCount} evergreen winners found. {opportunities.filter((o: any) => o.classLabel !== "Archive").length} actionable opportunities.
+            Your execution plan for growth, refreshed daily.
           </p>
         </div>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-8">
           <div className="flex flex-col items-end text-right">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-0.5">Momentum</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Momentum</span>
             <div className="flex items-center gap-1.5">
-              <span className={`text-sm font-medium ${momentum.trend === "up" ? "text-green-400" : momentum.trend === "down" ? "text-red-400" : "text-muted-foreground"}`}>
-                {momentum.label}
-              </span>
-              <TrendingUp className={`w-4 h-4 ${momentum.trend === "up" ? "text-green-400" : momentum.trend === "down" ? "text-red-400 rotate-180" : "text-muted-foreground"}`} />
-            </div>
-            {lastSync && (
-              <span className="text-[10px] text-muted-foreground mt-0.5">
-                Synced {formatDistanceToNow(new Date(lastSync))} ago
-              </span>
-            )}
-          </div>
-          <div className="w-px h-10 bg-border/50" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex flex-col items-end text-right cursor-help" data-testid="text-opportunity-score">
-                <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-0.5">
-                  Opportunity
-                </span>
-                <div className="flex items-baseline gap-0.5">
-                  <span className="text-2xl font-bold tracking-tighter text-yellow-400">{overallScore}</span>
-                  <span className="text-xs text-muted-foreground">/100</span>
-                </div>
+              <span className="text-2xl font-bold text-foreground">{momentum.score}</span>
+              <div className={cn(
+                "px-1.5 py-0.5 rounded flex items-center text-[10px] font-bold uppercase",
+                momentum.trend === "up" ? "bg-green-500/10 text-green-400" :
+                momentum.trend === "down" ? "bg-red-500/10 text-red-400" :
+                "bg-neutral-500/10 text-neutral-400"
+              )}>
+                {momentum.trend === "up" ? <TrendingUp className="w-3 h-3 mr-1" /> :
+                 momentum.trend === "down" ? <TrendingUp className="w-3 h-3 mr-1 rotate-180" /> :
+                 <Minus className="w-3 h-3 mr-1" />}
+                {momentum.trend}
               </div>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs p-3">
-              <p className="text-xs leading-relaxed">{momentum.details}</p>
-            </TooltipContent>
-          </Tooltip>
+            </div>
+          </div>
+          <div className="h-10 w-px bg-border/40" />
+          <div className="flex flex-col items-end text-right">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Opp. Score</span>
+            <div className="text-2xl font-bold text-yellow-400">{overallScore}</div>
+          </div>
         </div>
       </header>
 
-      {next7Days.length > 0 && (
-        <div className="mb-8 bg-card border border-border/50 rounded-xl p-5" data-testid="card-7day-plan">
-          <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" /> Next 7 Days
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-            {next7Days.map((slot: any, i: number) => {
-              const dayParts = slot.day.split(", ");
-              const dayName = dayParts[0];
-              const date = dayParts.slice(1).join(", ");
-              return (
-                <div key={i} className="bg-secondary/20 border border-border/20 rounded-lg px-3 py-2.5" data-testid={`slot-day-${i}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-foreground">{dayName}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">{slot.time}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-snug line-clamp-2">{slot.label}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {seasonalInsights.length > 0 && (
+        <Card className="bg-primary/5 border-primary/20 overflow-hidden" data-testid="card-seasonal-insights">
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-primary mb-1">Seasonal Insight Detected</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {seasonalInsights.join(" ")}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground font-mono mr-1">Filter:</span>
-        <button
-          onClick={() => setClassFilter("all")}
-          className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${classFilter === "all" ? "bg-primary text-primary-foreground border-primary" : "bg-secondary/50 text-muted-foreground border-border hover:bg-secondary"}`}
-          data-testid="filter-all"
-        >
-          All ({opportunities.length})
-        </button>
-        {Object.entries(classCounts).map(([label, count]) => {
-          const s = CLASS_STYLES[label] || CLASS_STYLES["Archive"];
-          return (
-            <button
-              key={label}
-              onClick={() => setClassFilter(label)}
-              className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${classFilter === label ? `${s.bg} ${s.color} ${s.border}` : "bg-secondary/50 text-muted-foreground border-border hover:bg-secondary"}`}
-              data-testid={`filter-${label.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              {label} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="space-y-3 mb-12" data-testid="list-opportunities">
-        {filteredOpps.map((opp: any, idx: number) => (
-          <OpportunityRow
-            key={opp.videoId}
-            opp={opp}
-            videos={videos}
-            onExecute={handleExecute}
-            rank={classFilter === "all" ? idx : -1}
-          />
-        ))}
-        {filteredOpps.length === 0 && (
-          <div className="p-8 text-center text-muted-foreground border border-dashed border-border rounded-xl">
-            No videos in this category.
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Zap className="w-5 h-5 text-primary" /> Today's Top 3
+          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Show low-confidence</span>
+            <input 
+              type="checkbox" 
+              className="w-4 h-4 accent-primary" 
+              checked={showAll}
+              onChange={(e) => setShowAll(e.target.checked)}
+            />
           </div>
-        )}
-      </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {(showAll ? opportunities.filter((o: any) => o.classLabel !== "Archive").slice(0, 3) : top3).map((opp: any) => (
+            <TopOpportunityCard 
+              key={opp.videoId} 
+              opp={opp} 
+              video={videos.find((v: any) => v.id === opp.videoId)}
+              onExecute={handleExecute}
+              onOpenPlan={(opp) => setSelectedPlan(opp)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <h2 className="text-xl font-bold flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-muted-foreground" /> This Week Plan
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {calendarPlans.map(({ day, plan }, i) => (
+            <CalendarDay 
+              key={i} 
+              day={day} 
+              plan={plan} 
+              onClick={() => plan && setSelectedPlan(plan.opp)}
+            />
+          ))}
+        </div>
+      </section>
 
       {recentExecs.length > 0 && (
-        <div className="pt-8 border-t border-border/30">
-          <h2 className="font-bold text-lg mb-4">Did these work for you?</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {recentExecs.map((ex: any) => (
-              <div key={ex.id} className="p-4 rounded-xl bg-card border border-border/50" data-testid={`card-feedback-${ex.id}`}>
-                <div className="flex justify-between items-start mb-3">
-                  <span className="font-medium text-sm capitalize bg-secondary/50 px-2 py-0.5 rounded">{ex.type.replace(/_/g, " ")}</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">{formatDistanceToNow(new Date(ex.executedAt))} ago</span>
-                </div>
-                <div className="flex gap-2 w-full">
-                  <button onClick={() => feedbackMutation.mutate({ executionId: ex.id, result: "better" })} className="flex-1 py-2 flex flex-col items-center gap-1 hover:bg-green-500/10 text-green-500/70 hover:text-green-400 rounded border border-border hover:border-green-500/30 transition-all" data-testid={`button-feedback-better-${ex.id}`}>
-                    <ThumbsUp className="w-4 h-4" /><span className="text-[10px] font-bold">BETTER</span>
-                  </button>
-                  <button onClick={() => feedbackMutation.mutate({ executionId: ex.id, result: "same" })} className="flex-1 py-2 flex flex-col items-center gap-1 hover:bg-secondary text-muted-foreground rounded border border-border hover:border-foreground/20 transition-all" data-testid={`button-feedback-same-${ex.id}`}>
-                    <Minus className="w-4 h-4" /><span className="text-[10px] font-bold">SAME</span>
-                  </button>
-                  <button onClick={() => feedbackMutation.mutate({ executionId: ex.id, result: "worse" })} className="flex-1 py-2 flex flex-col items-center gap-1 hover:bg-destructive/10 text-destructive/70 hover:text-red-400 rounded border border-border hover:border-destructive/30 transition-all" data-testid={`button-feedback-worse-${ex.id}`}>
-                    <ThumbsDown className="w-4 h-4" /><span className="text-[10px] font-bold">WORSE</span>
-                  </button>
-                </div>
-              </div>
+        <section className="pt-10 border-t border-border/40">
+          <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-muted-foreground">
+            <RotateCcw className="w-4 h-4" /> Feedback Required
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {recentExecs.map((exec: any) => (
+              <Card key={exec.id} className="bg-secondary/10 border-border/30">
+                <CardContent className="p-4 space-y-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground block mb-1">
+                      {exec.type.replace(/_/g, " ")} • {formatDistanceToNow(new Date(exec.executedAt))} ago
+                    </span>
+                    <h4 className="text-sm font-medium line-clamp-1">
+                      {videos.find((v: any) => v.id === exec.videoId)?.title || "Unknown Video"}
+                    </h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "better" })}>
+                      <ThumbsUp className="w-3 h-3 mr-1 text-green-400" /> Better
+                    </Button>
+                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "same" })}>
+                      <Minus className="w-3 h-3 mr-1 text-neutral-400" /> Same
+                    </Button>
+                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "worse" })}>
+                      <ThumbsDown className="w-3 h-3 mr-1 text-red-400" /> Worse
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
-        </div>
+        </section>
       )}
+
+      <Dialog open={!!selectedPlan} onOpenChange={(open) => !open && setSelectedPlan(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh]">
+          <DialogHeader>
+            <div className="flex items-center gap-2 mb-2">
+              <Badge className={cn("uppercase text-[10px] font-bold border", selectedPlan && CLASS_STYLES[selectedPlan.classLabel]?.bg, selectedPlan && CLASS_STYLES[selectedPlan.classLabel]?.color, selectedPlan && CLASS_STYLES[selectedPlan.classLabel]?.border)}>
+                {selectedPlan?.classLabel}
+              </Badge>
+              <Badge variant="secondary" className="text-[10px] font-bold">
+                Opp Score: {selectedPlan?.opportunityScore}
+              </Badge>
+            </div>
+            <DialogTitle className="text-xl md:text-2xl leading-tight">
+              {selectedPlan?.title}
+            </DialogTitle>
+            <DialogDescription className="text-sm pt-2">
+              Complete execution plan for this opportunity.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="flex-1 mt-4 pr-4">
+            <div className="space-y-8 pb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="md:col-span-2">
+                   <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-3 flex items-center gap-1.5">
+                    <Zap className="w-3 h-3 text-primary" /> Strategy & Packaging
+                  </h4>
+                  {selectedPlan && (
+                    <PlanDetails 
+                      plan={selectedPlan.plan} 
+                      videoId={selectedPlan.videoId} 
+                      onExecute={handleExecute}
+                    />
+                  )}
+                </div>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-3 flex items-center gap-1.5">
+                      <Info className="w-3 h-3" /> Score Breakdown
+                    </h4>
+                    {selectedPlan && <ScoreBreakdownPanel breakdown={selectedPlan.scoreBreakdown} />}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

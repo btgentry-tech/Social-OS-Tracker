@@ -70,6 +70,7 @@ export interface AnalysisResult {
   lastSync: string | null;
   winnerCount: number;
   winnerThreshold: number;
+  seasonalInsights: string[];
 }
 
 const TIME_SENSITIVE_KEYWORDS = [
@@ -117,11 +118,17 @@ export function runFullAnalysis(
   const avgViews = avg(videos.map(v => v.viewCount));
   const winnerThreshold = computeWinnerThreshold(videos);
 
+  const winners = videos.filter(v => {
+    const ratio = avgViews > 0 ? v.viewCount / avgViews : 0;
+    return ratio >= winnerThreshold && v.viewCount >= minViewsThreshold;
+  });
+
   const recentExecVideoIds = new Set(executions.slice(0, 15).map(e => e.videoId));
   const recentThemes = videos.slice(0, 5).map(v => v.theme).filter(Boolean);
   const recentFormats = videos.slice(0, 5).map(v => v.format).filter(Boolean);
 
   const winnerFeatures = extractWinnerFeatures(videos, winnerThreshold, minViewsThreshold);
+  const seasonalInsights = detectSeasonality(videos, winnerThreshold);
 
   const opportunities: VideoOpportunity[] = videos.map(v => {
     const viewsRatio = avgViews > 0 ? v.viewCount / avgViews : 0;
@@ -129,58 +136,67 @@ export function runFullAnalysis(
     const freshnessDays = Math.max(1, Math.ceil((now - pubDate) / (1000 * 60 * 60 * 24)));
     const decayBucket = getDecayBucket(freshnessDays);
     const thumbnailScore = v.thumbnailScore || 0;
+    
+    // Prefer transcript for hook scoring if ready
+    const hookText = (v.transcriptStatus === 'ready' && v.transcript) 
+      ? v.transcript.split(/\s+/).slice(0, 40).join(" ")
+      : v.description || "";
     const hookScore = v.hookScore || 0;
+    
     const titleKeywords = extractTitleKeywords(v.title);
-    const timeSensitive = checkTimeSensitive(v.notes, v.title);
-    const similarityGroup = computeSimilarityGroup(v, videos);
+  const timeSensitive = checkTimeSensitive(v.notes, v.title);
+  const similarityGroup = computeSimilarityGroup(v, videos);
 
-    const themeCount = recentThemes.filter(t => t === v.theme).length;
-    const isNovel = !recentThemes.includes(v.theme!) || !recentFormats.includes(v.format!);
-    const wasRecentlyActioned = recentExecVideoIds.has(v.id);
+  const themeCount = recentThemes.filter(t => t === v.theme).length;
+  const isNovel = !recentThemes.includes(v.theme!) || !recentFormats.includes(v.format!);
+  const wasRecentlyActioned = recentExecVideoIds.has(v.id);
 
-    const repetitionPenalty = computeRepetitionPenalty(themeCount, wasRecentlyActioned, similarityGroup, executions);
-    const noveltyScore = isNovel ? 1.0 : 0;
+  const repetitionPenalty = computeRepetitionPenalty(themeCount, wasRecentlyActioned, similarityGroup, executions);
+  const noveltyScore = isNovel ? 1.0 : 0;
 
-    const { classLabel, confidence, reasons } = classifyVideo(
-      v, viewsRatio, freshnessDays, timeSensitive, winnerThreshold,
-      minViewsThreshold, thumbnailScore, hookScore, winnerFeatures
-    );
+  const { classLabel, confidence, reasons } = classifyVideo(
+    v, viewsRatio, freshnessDays, timeSensitive, winnerThreshold,
+    minViewsThreshold, thumbnailScore, hookScore, winnerFeatures,
+    v.transcriptStatus === 'ready'
+  );
 
-    const scoreBreakdown = computeScoreBreakdown(
-      viewsRatio, decayBucket, noveltyScore, thumbnailScore,
-      repetitionPenalty, timeSensitive, hookScore
-    );
-    const opportunityScore = computeOpportunityScore(scoreBreakdown);
+  const scoreBreakdown = computeScoreBreakdown(
+    viewsRatio, decayBucket, noveltyScore, thumbnailScore,
+    repetitionPenalty, timeSensitive, hookScore,
+    v.transcriptStatus === 'ready'
+  );
+  const opportunityScore = computeOpportunityScore(scoreBreakdown);
 
-    const plan = generatePlan(
-      v, classLabel, viewsRatio, freshnessDays, thumbnailScore,
-      hookScore, titleKeywords, winnerFeatures, similarityGroup
-    );
+  const plan = generatePlan(
+    v, classLabel, viewsRatio, freshnessDays, thumbnailScore,
+    hookScore, titleKeywords, winnerFeatures, similarityGroup,
+    winners
+  );
 
-    return {
-      videoId: v.id,
-      title: v.title,
-      classLabel,
-      confidence,
-      reasons,
-      plan,
-      opportunityScore,
-      scoreBreakdown,
-      viewsRatio: Math.round(viewsRatio * 100) / 100,
-      freshnessDays,
-      decayBucket,
-      thumbnailScore: Math.round(thumbnailScore),
-      timeSensitive,
-      similarityGroup,
-      titleKeywords,
-    };
-  });
+  return {
+    videoId: v.id,
+    title: v.title,
+    classLabel,
+    confidence,
+    reasons,
+    plan,
+    opportunityScore,
+    scoreBreakdown,
+    viewsRatio: Math.round(viewsRatio * 100) / 100,
+    freshnessDays,
+    decayBucket,
+    thumbnailScore: Math.round(thumbnailScore),
+    timeSensitive,
+    similarityGroup,
+    titleKeywords,
+  };
+});
 
-  opportunities.sort((a, b) => b.opportunityScore - a.opportunityScore);
+opportunities.sort((a, b) => b.opportunityScore - a.opportunityScore);
 
-  const next7DaysPlan = buildNext7DaysPlan(opportunities, executions);
-  const warnings = generateWarnings(videos, opportunities, recentThemes, executions);
-  const momentum = computeMomentum(videos, avgViews);
+const next7DaysPlan = buildNext7DaysPlan(opportunities, executions, winners);
+const warnings = generateWarnings(videos, opportunities, recentThemes, executions);
+const momentum = computeMomentum(videos, avgViews);
 
   const overallOpportunityScore = Math.min(100, Math.round(
     momentum.score * 0.3 +
@@ -198,6 +214,7 @@ export function runFullAnalysis(
     lastSync,
     winnerCount: opportunities.filter(o => o.classLabel === "Evergreen Winner").length,
     winnerThreshold: Math.round(winnerThreshold * 100) / 100,
+    seasonalInsights,
   };
 }
 
@@ -284,7 +301,7 @@ function extractTitleKeywords(title: string): string[] {
     }
   }
 
-  return [...new Set(found)];
+  return Array.from(new Set(found));
 }
 
 function checkTimeSensitive(notes: string | null | undefined, title: string): boolean {
@@ -308,7 +325,7 @@ function computeSimilarityGroup(video: Video, allVideos: Video[]): string {
   });
 
   if (similar.length > 0) {
-    return `${theme}:${keywords.sort().join("+")}`;
+    return `${theme}:${Array.from(keywords).sort().join("+")}`;
   }
   return `${theme}:${format}`;
 }
@@ -359,7 +376,8 @@ function classifyVideo(
   minViews: number,
   thumbnailScore: number,
   hookScore: number,
-  winnerFeatures: WinnerFeatures
+  winnerFeatures: WinnerFeatures,
+  hasTranscript: boolean = false
 ): { classLabel: ClassLabel; confidence: ConfidenceLevel; reasons: string[] } {
   const reasons: string[] = [];
 
@@ -383,6 +401,7 @@ function classifyVideo(
     reasons.push(`Views ratio ${viewsRatio.toFixed(2)}x is in the top 20% of your channel.`);
     reasons.push(`Published ${freshnessDays} days ago — proven and mature enough for evergreen treatment.`);
     if (thumbnailScore > 60) reasons.push(`Strong thumbnail (score: ${Math.round(thumbnailScore)}/100).`);
+    if (hasTranscript) reasons.push("Transcript analysis confirmed high-quality hook structure.");
     return { classLabel: "Evergreen Winner", confidence: "High", reasons };
   }
 
@@ -447,7 +466,8 @@ function computeScoreBreakdown(
   thumbnailScore: number,
   repetitionPenalty: number,
   timeSensitive: boolean,
-  hookScore: number
+  hookScore: number,
+  hasTranscript: boolean = false
 ): ScoreBreakdown {
   const viewsRatioScore = Math.min(30, viewsRatio * 15);
   const decayScore = getDecayScore(decayBucket) * 20;
@@ -467,8 +487,14 @@ function computeScoreBreakdown(
   else if (thumbnailScore > 0 && thumbnailQualityScore < 5) explanation.push("Weak thumbnail — consider redesigning.");
   if (repetitionPenaltyWeighted > 5) explanation.push("Similar content was recently recommended or executed.");
   if (timeSensitivePenalty > 0) explanation.push("Time-sensitive content gets deprioritized.");
-  if (hookQualityScore >= 7) explanation.push("Description suggests engaging opening language.");
-  else if (hookScore > 0 && hookQualityScore < 3) explanation.push("Hook analysis suggests weak opening — reframe the intro.");
+  
+  if (hasTranscript) {
+    if (hookQualityScore >= 7) explanation.push("Transcript analysis confirms a high-impact opening.");
+    else if (hookScore > 0 && hookQualityScore < 3) explanation.push("Transcript reveals a slow start — consider a sharper hook.");
+  } else {
+    if (hookQualityScore >= 7) explanation.push("Description suggests engaging opening language.");
+    else if (hookScore > 0 && hookQualityScore < 3) explanation.push("Hook analysis suggests weak opening — reframe the intro.");
+  }
 
   return {
     viewsRatioScore: round2(viewsRatioScore),
@@ -503,12 +529,13 @@ function generatePlan(
   hookScore: number,
   titleKeywords: string[],
   winnerFeatures: WinnerFeatures,
-  similarityGroup: string
+  similarityGroup: string,
+  winners: Video[] = []
 ): VideoPlan {
   const topic = extractTopicFromTitle(v.title);
   const hookVariants = generateDeterministicHooks(topic, titleKeywords);
   const hashtagPack = generateHashtags(v.theme || "General", titleKeywords);
-  const scheduleSlots = generateScheduleSlots();
+  const scheduleSlots = generateScheduleSlots(winners);
 
   const basePlan: VideoPlan = {
     classLabel,
@@ -662,23 +689,92 @@ function generateHashtags(theme: string, titleKeywords: string[]): string[] {
   if (titleKeywords.includes("result")) tags.push("#Results");
   if (titleKeywords.includes("list")) tags.push("#TopPicks");
   tags.push("#CreatorTips", "#ContentStrategy");
-  return [...new Set(tags)].slice(0, 6);
+  return Array.from(new Set(tags)).slice(0, 6);
 }
 
-function generateScheduleSlots(): ScheduleSlot[] {
+export function detectSeasonality(videos: Video[], winnerThreshold: number): string[] {
+  const avgViews = avg(videos.map(v => v.viewCount));
+  const winners = videos.filter(v => {
+    const ratio = avgViews > 0 ? v.viewCount / avgViews : 0;
+    return ratio >= winnerThreshold;
+  });
+
+  const insights: string[] = [];
+  if (winners.length === 0) return insights;
+
+  // Group winners by publication month
+  const monthCounts: Record<number, number> = {};
+  for (const w of winners) {
+    const month = new Date(w.publishedAt).getMonth(); // 0-11
+    monthCounts[month] = (monthCounts[month] || 0) + 1;
+  }
+
+  // Detect seasonal peaks (3+ winners in same month)
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  for (const [month, count] of Object.entries(monthCounts)) {
+    if (count >= 3) {
+      insights.push(`Seasonal Peak: ${monthNames[parseInt(month)]} historically yields more winners for you.`);
+    }
+  }
+
+  // Detect anniversary replay opportunities (winners published in current month ±1)
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const windowMonths = [(currentMonth - 1 + 12) % 12, currentMonth, (currentMonth + 1) % 12];
+
+  const anniversaryWinners = winners.filter(w => {
+    const pubDate = new Date(w.publishedAt);
+    const pubMonth = pubDate.getMonth();
+    const pubYear = pubDate.getFullYear();
+    return windowMonths.includes(pubMonth) && pubYear < now.getFullYear();
+  });
+
+  if (anniversaryWinners.length > 0) {
+    const topWinner = anniversaryWinners.sort((a, b) => b.viewCount - a.viewCount)[0];
+    insights.push(`Anniversary Opportunity: "${topWinner.title}" performed well around this time in ${new Date(topWinner.publishedAt).getFullYear()}. Consider a spiritual sequel or refresh.`);
+  }
+
+  return insights;
+}
+
+function generateScheduleSlots(winners: Video[] = []): ScheduleSlot[] {
   const slots: ScheduleSlot[] = [];
   const now = new Date();
+
+  // Smarter posting times: analyze winners (5+ needed for real data)
+  let bestTimes = POSTING_TIMES;
+  if (winners.length >= 5) {
+    const hourCounts: Record<number, number> = {};
+    for (const w of winners) {
+      const date = new Date(w.publishedAt);
+      const hour = date.getHours();
+      hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+    }
+
+    const sortedHours = Object.entries(hourCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([h]) => parseInt(h));
+
+    if (sortedHours.length > 0) {
+      bestTimes = sortedHours.map(h => {
+        const period = h >= 12 ? "PM" : "AM";
+        const hour = h % 12 || 12;
+        return `${hour}:00 ${period}`;
+      });
+    }
+  }
 
   for (let i = 1; i <= 7; i++) {
     const day = new Date(now);
     day.setDate(day.getDate() + i);
     const dayName = day.toLocaleDateString("en-US", { weekday: "long" });
     const dateStr = day.toISOString().split("T")[0];
-    const timeIdx = (i - 1) % POSTING_TIMES.length;
+    const timeIdx = (i - 1) % bestTimes.length;
 
     slots.push({
       day: `${dayName}, ${dateStr}`,
-      time: POSTING_TIMES[timeIdx],
+      time: bestTimes[timeIdx],
       label: i <= 2 ? "Prime slot" : i <= 5 ? "Good slot" : "Backup slot",
     });
   }
@@ -704,13 +800,37 @@ function generateSequelIdeas(title: string, keywords: string[]): string[] {
   return ideas;
 }
 
-function buildNext7DaysPlan(opportunities: VideoOpportunity[], executions: Execution[]): ScheduleSlot[] {
+function buildNext7DaysPlan(opportunities: VideoOpportunity[], executions: Execution[], winners: Video[] = []): ScheduleSlot[] {
   const actionable = opportunities
     .filter(o => o.classLabel !== "Archive" && o.opportunityScore > 20)
     .slice(0, 7);
 
   const plan: ScheduleSlot[] = [];
   const now = new Date();
+  
+  // Get smarter posting times based on winners
+  let bestTimes = POSTING_TIMES;
+  if (winners.length >= 5) {
+    const hourCounts: Record<number, number> = {};
+    for (const w of winners) {
+      const date = new Date(w.publishedAt);
+      const hour = date.getHours();
+      hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+    }
+
+    const sortedHours = Object.entries(hourCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([h]) => parseInt(h));
+
+    if (sortedHours.length > 0) {
+      bestTimes = sortedHours.map(h => {
+        const period = h >= 12 ? "PM" : "AM";
+        const hour = h % 12 || 12;
+        return `${hour}:00 ${period}`;
+      });
+    }
+  }
 
   for (let i = 0; i < Math.min(7, actionable.length); i++) {
     const day = new Date(now);
@@ -721,7 +841,7 @@ function buildNext7DaysPlan(opportunities: VideoOpportunity[], executions: Execu
 
     plan.push({
       day: `${dayName}, ${dateStr}`,
-      time: POSTING_TIMES[i % POSTING_TIMES.length],
+      time: bestTimes[i % bestTimes.length],
       label: `${opp.classLabel}: "${opp.title.slice(0, 40)}${opp.title.length > 40 ? "..." : ""}" (Score: ${opp.opportunityScore})`,
     });
   }
@@ -812,6 +932,7 @@ function emptyResult(videoCount: number, lastSync: string | null): AnalysisResul
     lastSync,
     winnerCount: 0,
     winnerThreshold: 0,
+    seasonalInsights: [],
   };
 }
 

@@ -3,7 +3,7 @@ import { usePersistedStore, useSessionStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Youtube, RefreshCw, Key, Hash, CheckCircle2, Database, Trash2, ArrowRight } from "lucide-react";
+import { Youtube, RefreshCw, Key, Hash, CheckCircle2, Database, Trash2, ArrowRight, Upload, Music2, Instagram, Info } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 
@@ -17,6 +17,7 @@ export default function Connect() {
   const [localChannelId, setLocalChannelId] = useState(youtubeChannelId);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  const [isImporting, setIsImporting] = useState<string | null>(null);
 
   const { data: status } = useQuery({
     queryKey: ["/api/status", youtubeChannelId],
@@ -28,7 +29,49 @@ export default function Connect() {
     enabled: !!youtubeChannelId,
   });
 
+  const { data: transcriptStats } = useQuery({
+    queryKey: ["/api/transcript-stats", youtubeChannelId],
+    queryFn: async () => {
+      const res = await fetch(`/api/transcript-stats?channelId=${youtubeChannelId}`);
+      return res.json();
+    },
+    enabled: !!youtubeChannelId,
+  });
+
   const isConnected = status?.connected && status?.videoCount > 0;
+
+  const handleImportCSV = async (platform: 'tiktok' | 'instagram', file: File) => {
+    if (!youtubeChannelId) {
+      toast({ variant: "destructive", title: "Channel ID required", description: "Connect a YouTube channel first to provide a workspace context." });
+      return;
+    }
+
+    setIsImporting(platform);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("platform", platform);
+    formData.append("channelId", youtubeChannelId);
+
+    try {
+      const res = await fetch("/api/import/csv", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.ok) {
+        toast({ title: "Import Successful", description: `Imported ${data.importedCount} ${platform} videos.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/status"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/analyze"] });
+      } else {
+        toast({ variant: "destructive", title: "Import Failed", description: data.message });
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Import Failed", description: err.message });
+    } finally {
+      setIsImporting(null);
+    }
+  };
 
   const handleTestConnection = async () => {
     if (!localApiKey || !localChannelId) {
@@ -103,6 +146,36 @@ export default function Connect() {
       </div>
 
       <div className="grid gap-8">
+        {isConnected && youtubeApiKey && (
+          <div className="bg-primary/5 border border-primary/20 rounded-xl p-6 flex gap-4 items-start animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary shrink-0">
+              <Info className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-semibold text-primary">Transcript Processing</h3>
+              <p className="text-sm text-muted-foreground">
+                Transcripts are fetched automatically for public videos during sync. Videos with transcripts get more accurate hook analysis.
+              </p>
+              {transcriptStats && (
+                <div className="flex gap-4 mt-3">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Ready</span>
+                    <span className="text-lg font-mono font-bold text-green-500" data-testid="status-transcripts-ready">{transcriptStats.ready}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Pending</span>
+                    <span className="text-lg font-mono font-bold text-yellow-500" data-testid="status-transcripts-pending">{transcriptStats.pending}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Missing</span>
+                    <span className="text-lg font-mono font-bold text-muted-foreground" data-testid="status-transcripts-missing">{transcriptStats.missing}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className={`bg-card border ${isConnected ? "border-green-500/50" : "border-border/60"} rounded-xl overflow-hidden shadow-lg relative transition-colors duration-300`}>
           <div className="p-6 border-b border-border/40 flex justify-between items-start">
             <div className="flex items-center gap-4">
@@ -238,6 +311,90 @@ export default function Connect() {
                   </Link>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-8">
+          <div className="bg-card border border-border/60 rounded-xl overflow-hidden shadow-lg">
+            <div className="p-6 border-b border-border/40 flex items-center gap-4">
+              <div className="w-12 h-12 bg-black/10 rounded-lg flex items-center justify-center text-black dark:text-white">
+                <Music2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold">TikTok Analytics</h2>
+                <p className="text-sm text-muted-foreground">Import your TikTok data via CSV</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-muted-foreground italic">
+                Export your analytics CSV from TikTok Creator Tools and upload it here.
+              </p>
+              <div className="flex flex-col gap-3">
+                <input
+                  type="file"
+                  accept=".csv"
+                  id="tiktok-upload"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportCSV('tiktok', file);
+                  }}
+                />
+                <button
+                  onClick={() => document.getElementById('tiktok-upload')?.click()}
+                  disabled={isImporting === 'tiktok' || !isConnected}
+                  className="w-full bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                  data-testid="button-import-tiktok"
+                >
+                  <Upload className={`w-4 h-4 ${isImporting === 'tiktok' ? "animate-bounce" : ""}`} />
+                  {isImporting === 'tiktok' ? "Importing..." : "Upload TikTok CSV"}
+                </button>
+                <p className="text-[10px] text-center text-muted-foreground">Official TikTok API integration coming soon.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border/60 rounded-xl overflow-hidden shadow-lg">
+            <div className="p-6 border-b border-border/40 flex items-center gap-4">
+              <div className="w-12 h-12 bg-pink-500/10 rounded-lg flex items-center justify-center text-pink-500">
+                <Instagram className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold">Instagram Insights</h2>
+                <p className="text-sm text-muted-foreground">Import your Instagram data via CSV</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-secondary/20 rounded p-3 text-[11px] space-y-2">
+                <p className="font-bold uppercase text-muted-foreground">Instructions:</p>
+                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                  <li>Go to Instagram Insights on Mobile/Web</li>
+                  <li>Export your content performance data</li>
+                  <li>Ensure CSV has Caption and Impressions columns</li>
+                </ol>
+              </div>
+              <div className="flex flex-col gap-3">
+                <input
+                  type="file"
+                  accept=".csv"
+                  id="instagram-upload"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImportCSV('instagram', file);
+                  }}
+                />
+                <button
+                  onClick={() => document.getElementById('instagram-upload')?.click()}
+                  disabled={isImporting === 'instagram' || !isConnected}
+                  className="w-full bg-secondary text-foreground hover:bg-secondary/80 border border-border px-4 py-3 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-50"
+                  data-testid="button-import-instagram"
+                >
+                  <Upload className={`w-4 h-4 ${isImporting === 'instagram' ? "animate-bounce" : ""}`} />
+                  {isImporting === 'instagram' ? "Importing..." : "Upload Instagram CSV"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

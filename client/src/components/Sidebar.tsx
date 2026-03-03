@@ -1,12 +1,12 @@
 import { Link, useLocation } from "wouter";
-import { Zap, Settings, Link as LinkIcon, BookOpen, Library } from "lucide-react";
+import { CalendarDays, Settings, Link as LinkIcon, BookOpen, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function Sidebar() {
   const [location] = useLocation();
 
   const navItems = [
-    { name: "Brief", href: "/", icon: Zap },
+    { name: "Today", href: "/", icon: CalendarDays },
     { name: "Library", href: "/library", icon: Library },
     { name: "Connect", href: "/connect", icon: LinkIcon },
     { name: "Playbooks", href: "/playbooks", icon: BookOpen },

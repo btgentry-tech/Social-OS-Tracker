@@ -5,8 +5,10 @@ import { fetchChannelVideos, testYouTubeConnection } from "./youtube";
 import { downloadAndAnalyzeThumbnail } from "./thumbnails";
 import { scoreHook, extractHookText } from "./hooks";
 import { runFullAnalysis, adjustWeightsFromFeedback } from "./engine";
-import type { Video } from "@shared/schema";
-import type { AnalysisResult, VideoOpportunity } from "./engine";
+import { fetchYouTubeTranscript } from "./transcripts";
+import { parse } from "csv-parse/sync";
+import { createHash } from "crypto";
+import multer from "multer";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -82,6 +84,7 @@ export async function registerRoutes(
       });
 
       processThumbnailsInBackground(rawVideos.map(v => ({ id: v.id, url: v.thumbnailUrl || "" })));
+      processTranscriptsInBackground(rawVideos);
       processHooksInBackground(rawVideos);
 
       runAnalysisAndPersist(channelId);
@@ -148,14 +151,7 @@ export async function registerRoutes(
 
       persistAnalysisResults(result.opportunities);
 
-      const items = buildLegacyItems(result.opportunities, vids);
-      const gameplan = buildLegacyGameplan(result);
-
-      res.json({
-        ...result,
-        items,
-        gameplan,
-      });
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -230,7 +226,134 @@ export async function registerRoutes(
     }
   });
 
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  app.post("/api/import/csv", upload.single("file"), async (req: any, res) => {
+    try {
+      const platform = req.body.platform as string;
+      const channelId = req.body.channelId as string;
+      if (!platform || !channelId) {
+        return res.status(400).json({ message: "platform and channelId are required." });
+      }
+      if (!["tiktok", "instagram"].includes(platform)) {
+        return res.status(400).json({ message: "platform must be 'tiktok' or 'instagram'." });
+      }
+      if (!req.file) {
+        return res.status(400).json({ message: "CSV file is required." });
+      }
+
+      const csvText = req.file.buffer.toString("utf-8");
+      const records = parse(csvText, { columns: true, skip_empty_lines: true, relax_column_count: true });
+
+      const imported: any[] = [];
+      for (const row of records) {
+        const mapped = mapCsvRow(row, platform, channelId);
+        if (mapped) {
+          await storage.upsertVideo(mapped);
+          imported.push(mapped);
+        }
+      }
+
+      if (imported.length > 0) {
+        runAnalysisAndPersist(channelId);
+      }
+
+      res.json({ ok: true, importedCount: imported.length, platform });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/transcript-stats", async (req, res) => {
+    try {
+      const channelId = req.query.channelId as string;
+      if (!channelId) return res.status(400).json({ message: "channelId required." });
+      const vids = await storage.getVideos(channelId);
+      const ytVids = vids.filter(v => (v.platform || "youtube") === "youtube");
+      const ready = ytVids.filter(v => v.transcriptStatus === "ready").length;
+      const missing = ytVids.filter(v => v.transcriptStatus === "missing").length;
+      const pending = ytVids.filter(v => !v.transcriptStatus || v.transcriptStatus === "pending").length;
+      res.json({ total: ytVids.length, ready, missing, pending });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   return httpServer;
+}
+
+function mapCsvRow(row: any, platform: string, channelId: string): any | null {
+  const keys = Object.keys(row);
+  if (keys.length === 0) return null;
+
+  if (platform === "tiktok") {
+    const title = row["Video Description"] || row["Description"] || row["video_description"] || row["Content"] || "";
+    const views = parseInt(row["Video Views"] || row["Views"] || row["video_views"] || row["Total Views"] || "0", 10);
+    const likes = parseInt(row["Likes"] || row["likes"] || row["Total Likes"] || "0", 10);
+    const comments = parseInt(row["Comments"] || row["comments"] || row["Total Comments"] || "0", 10);
+    const dateStr = row["Date"] || row["date"] || row["Date Posted"] || row["Create Time"] || "";
+
+    if (!title && views === 0) return null;
+
+    const hash = createHash("md5").update(`tiktok_${title}_${dateStr}`).digest("hex").slice(0, 16);
+    const id = `tk_${hash}`;
+
+    return {
+      id,
+      channelId,
+      title: title.slice(0, 200) || "TikTok Post",
+      description: title,
+      publishedAt: parseDateSafe(dateStr),
+      viewCount: views,
+      likeCount: likes,
+      commentCount: comments,
+      tags: [],
+      platform: "tiktok",
+      theme: "General",
+      format: "Shorts",
+    };
+  }
+
+  if (platform === "instagram") {
+    const title = row["Caption"] || row["caption"] || row["Description"] || row["Post Caption"] || row["Content"] || "";
+    const views = parseInt(row["Impressions"] || row["Reach"] || row["impressions"] || row["Views"] || "0", 10);
+    const likes = parseInt(row["Likes"] || row["likes"] || row["Total Likes"] || "0", 10);
+    const comments = parseInt(row["Comments"] || row["comments"] || row["Total Comments"] || "0", 10);
+    const dateStr = row["Date"] || row["date"] || row["Published"] || row["Date Posted"] || "";
+
+    if (!title && views === 0) return null;
+
+    const hash = createHash("md5").update(`ig_${title}_${dateStr}`).digest("hex").slice(0, 16);
+    const id = `ig_${hash}`;
+
+    return {
+      id,
+      channelId,
+      title: title.slice(0, 200) || "Instagram Post",
+      description: title,
+      publishedAt: parseDateSafe(dateStr),
+      viewCount: views,
+      likeCount: likes,
+      commentCount: comments,
+      tags: [],
+      platform: "instagram",
+      theme: "General",
+      format: "Standard",
+    };
+  }
+
+  return null;
+}
+
+function parseDateSafe(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString();
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return new Date().toISOString();
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
 }
 
 async function persistAnalysisResults(opportunities: any[]) {
@@ -290,138 +413,47 @@ async function processThumbnailsInBackground(items: { id: string; url: string }[
   }
 }
 
-function buildLegacyItems(opportunities: VideoOpportunity[], videos: Video[]): any[] {
-  const videoMap = new Map(videos.map(v => [v.id, v]));
-  const items: any[] = [];
+async function processTranscriptsInBackground(videos: any[]) {
+  for (const v of videos) {
+    try {
+      // Only fetch if platform is youtube and we don't have it yet
+      if (v.platform !== 'youtube') continue;
 
-  const nonArchive = opportunities.filter(o => o.classLabel !== "Archive");
-  if (nonArchive.length === 0) return [];
+      const transcript = await fetchYouTubeTranscript(v.id);
+      if (transcript) {
+        const hookText = extractHookText(transcript);
+        const hookResult = hookText ? scoreHook(hookText) : null;
 
-  const primary = nonArchive[0];
-  const primaryVideo = videoMap.get(primary.videoId);
-
-  const sectionMap: Record<string, string> = {
-    "Evergreen Winner": "doThisNext",
-    "Repost Candidate": "repost",
-    "Retry (Second Shot)": "fixRetry",
-    "Restructure": "newAngle",
-    "Archive": "archive",
-  };
-
-  const badgeMap: Record<string, string> = {
-    "Evergreen Winner": "Evergreen",
-    "Repost Candidate": "Repost",
-    "Retry (Second Shot)": "Fix",
-    "Restructure": "Restructure",
-    "Archive": "Archive",
-  };
-
-  items.push({
-    section: "doThisNext",
-    title: primary.classLabel === "Repost Candidate" ? "High-Probability Repost" :
-           primary.classLabel === "Evergreen Winner" ? "Evergreen Winner — Double Down" :
-           primary.classLabel === "Retry (Second Shot)" ? "Fix & Retry" :
-           `Restructure: ${primary.title.slice(0, 40)}`,
-    badge: "Do This First",
-    badgeColor: "primary",
-    video: primaryVideo,
-    package: oppToPackage(primary),
-  });
-
-  const repostOpp = nonArchive.find(o => o.classLabel === "Repost Candidate" && o.videoId !== primary.videoId);
-  if (repostOpp) {
-    items.push({
-      section: "repost",
-      title: "Strong Repost Opportunity",
-      badge: "Repost",
-      badgeColor: "secondary",
-      video: videoMap.get(repostOpp.videoId),
-      package: oppToPackage(repostOpp),
-    });
+        await storage.updateVideoAnalysis(v.id, {
+          transcript,
+          transcriptStatus: 'ready',
+          ...(hookResult ? {
+            hookText,
+            hookScore: hookResult.score,
+            hookFeatures: hookResult.features,
+          } : {})
+        });
+      } else {
+        await storage.updateVideoAnalysis(v.id, {
+          transcriptStatus: 'missing'
+        });
+      }
+    } catch (err) {
+      console.error(`Transcript processing failed for ${v.id}:`, err);
+    }
   }
-
-  const retryOpp = nonArchive.find(o =>
-    (o.classLabel === "Retry (Second Shot)" || o.classLabel === "Restructure") &&
-    o.videoId !== primary.videoId &&
-    o.videoId !== repostOpp?.videoId
-  );
-  if (retryOpp) {
-    items.push({
-      section: "fixRetry",
-      title: retryOpp.classLabel === "Restructure" ? `Restructure: ${retryOpp.title.slice(0, 30)}` : "Fix & Retry",
-      badge: badgeMap[retryOpp.classLabel] || "Fix",
-      badgeColor: "secondary",
-      video: videoMap.get(retryOpp.videoId),
-      package: oppToPackage(retryOpp),
-    });
-  }
-
-  const evergreenOpp = nonArchive.find(o =>
-    o.classLabel === "Evergreen Winner" &&
-    o.videoId !== primary.videoId &&
-    o.videoId !== repostOpp?.videoId &&
-    o.videoId !== retryOpp?.videoId
-  );
-  if (evergreenOpp) {
-    items.push({
-      section: "newAngle",
-      title: `Evergreen: ${evergreenOpp.title.slice(0, 40)}`,
-      badge: "Evergreen",
-      badgeColor: "secondary",
-      video: videoMap.get(evergreenOpp.videoId),
-      package: oppToPackage(evergreenOpp),
-    });
-  }
-
-  return items;
-}
-
-function oppToPackage(opp: VideoOpportunity): any {
-  const plan = opp.plan;
-  return {
-    why: opp.reasons[0] || "",
-    diagnosis: opp.reasons.join(" "),
-    actionPlan: plan.specificChanges?.join(" ") || plan.reasons?.join(" ") || opp.reasons[0] || "",
-    confidence: opp.confidence,
-    hook: plan.hookVariants[0] || "",
-    hookVariants: plan.hookVariants,
-    captionStarter: plan.captionStarter,
-    ctaVariants: plan.ctaVariants,
-    hashtags: plan.hashtagPack.join(" "),
-    opportunityScore: opp.opportunityScore,
-    scoreBreakdown: {
-      performanceRatio: opp.viewsRatio,
-      freshness: opp.freshnessDays,
-      hookQuality: Math.round((opp.scoreBreakdown.hookQualityScore / 10) * 100),
-      thumbnailQuality: opp.thumbnailScore,
-      novelty: Math.round(opp.scoreBreakdown.noveltyScore * 10),
-      fatiguePenalty: Math.round(opp.scoreBreakdown.repetitionPenalty),
-    },
-  };
-}
-
-function buildLegacyGameplan(result: AnalysisResult): string[] {
-  const plan: string[] = [];
-  const top = result.opportunities[0];
-  if (top) {
-    plan.push(`1. ${top.classLabel}: "${top.title.slice(0, 50)}" — score ${top.opportunityScore}/100.`);
-  }
-  if (result.next7DaysPlan.length > 0) {
-    plan.push(`2. Next posting slot: ${result.next7DaysPlan[0].day} at ${result.next7DaysPlan[0].time}.`);
-  }
-  plan.push(`3. Review the "How we decided" breakdown on each card to understand your scores.`);
-  plan.push(`4. Add context notes to your videos for better time-sensitivity detection.`);
-  if (result.warnings.length > 0) {
-    plan.push(`5. Address the ${result.warnings.length} warning${result.warnings.length > 1 ? "s" : ""} above.`);
-  }
-  plan.push(`6. After posting, come back and rate the result to train the engine.`);
-  return plan;
 }
 
 async function processHooksInBackground(videos: any[]) {
   for (const v of videos) {
     try {
-      const hookText = extractHookText(v.description);
+      // Refresh video state to check if transcript was just added
+      const current = await storage.getVideo(v.id);
+      const textToScore = (current?.transcriptStatus === 'ready' && current?.transcript) 
+        ? current.transcript 
+        : v.description;
+
+      const hookText = extractHookText(textToScore);
       if (hookText) {
         const hookResult = scoreHook(hookText);
         await storage.updateVideoAnalysis(v.id, {
