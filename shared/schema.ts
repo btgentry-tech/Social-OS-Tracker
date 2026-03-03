@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, real, timestamp, jsonb, boolean, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, jsonb, boolean, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -27,6 +27,19 @@ export const videos = pgTable("videos", {
   format: varchar("format", { length: 64 }),
   notes: text("notes"),
   performanceRatio: real("performance_ratio"),
+  viewsRatio: real("views_ratio"),
+  freshnessDays: integer("freshness_days"),
+  decayBucket: varchar("decay_bucket", { length: 16 }),
+  titleKeywords: text("title_keywords").array().default(sql`'{}'::text[]`),
+  similarityGroup: varchar("similarity_group", { length: 128 }),
+  timeSensitive: boolean("time_sensitive").default(false),
+  classLabel: varchar("class_label", { length: 32 }),
+  confidence: varchar("confidence", { length: 16 }),
+  reasons: jsonb("reasons"),
+  plan: jsonb("plan"),
+  opportunityScore: real("opportunity_score"),
+  scoreBreakdown: jsonb("score_breakdown"),
+  lastRecommendedAt: text("last_recommended_at"),
 });
 
 export const insertVideoSchema = createInsertSchema(videos).omit({});
@@ -42,6 +55,8 @@ export const syncMetadata = pgTable("sync_metadata", {
   channelAvgViews: real("channel_avg_views").default(0),
   oauthTokens: jsonb("oauth_tokens"),
   connectionMode: varchar("connection_mode", { length: 16 }).default("apikey"),
+  winnerThreshold: real("winner_threshold").default(0),
+  minViewsThreshold: integer("min_views_threshold").default(100),
 });
 
 export const insertSyncMetadataSchema = createInsertSchema(syncMetadata).omit({ id: true });
