@@ -132,7 +132,8 @@ export default function Dashboard() {
   const { brief, videos, lastSyncedAt, executeMove, addFeedback, executions } = usePersistedStore();
   const { toast } = useToast();
 
-  if (!brief || videos.length === 0) {
+  // Check if we have data, and if the brief matches the current schema (e.g. has moves.repost)
+  if (!brief || videos.length === 0 || !brief.moves?.repost) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500">
         <div className="w-24 h-24 mb-6 rounded-full bg-secondary/50 border border-border/50 flex items-center justify-center">
@@ -140,12 +141,14 @@ export default function Dashboard() {
         </div>
         <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to Social OS</h1>
         <p className="text-muted-foreground max-w-md mb-8">
-          Connect your YouTube channel to see exactly what you should do next to grow your audience.
+          {!brief?.moves?.repost && videos.length > 0 
+            ? "We've updated our strategic engine. Please head to Connect and sync again to generate your new opportunities."
+            : "Connect your YouTube channel to see exactly what you should do next to grow your audience."}
         </p>
         <Link href="/connect">
           <button className="bg-primary text-primary-foreground px-6 py-3 rounded-md font-bold flex items-center gap-2 hover:bg-primary/90 transition-all hover:scale-105 active:scale-95 cursor-pointer">
             <Zap className="w-5 h-5" />
-            Connect YouTube
+            {(!brief?.moves?.repost && videos.length > 0) ? "Go to Connect" : "Connect YouTube"}
           </button>
         </Link>
       </div>
