@@ -20,16 +20,21 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { addDays, format, startOfWeek, isSameDay, formatDistanceToNow } from "date-fns";
 
 const CLASS_STYLES: Record<string, { color: string; bg: string; border: string; icon: any }> = {
-  "Evergreen Winner": { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: Star },
-  "Repost Candidate": { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", icon: RotateCcw },
-  "Retry (Second Shot)": { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: RefreshCw },
-  "Restructure": { color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", icon: Wrench },
+  "Evergreen": { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: Star },
+  "Retry-Hook": { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", icon: RotateCcw },
+  "Retry-Timing": { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: Clock },
+  "Seasonal": { color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", icon: Calendar },
+  "Event-Based": { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", icon: Zap },
   "Archive": { color: "text-neutral-400", bg: "bg-neutral-500/10", border: "border-neutral-500/20", icon: Archive },
 };
 
@@ -101,8 +106,8 @@ function ScoreBreakdownPanel({ breakdown }: { breakdown: any }) {
 }
 
 function PlanDetails({ plan, onExecute, videoId, hideExecute = false }: { plan: any; onExecute: (classLabel: string, videoId: string) => void; videoId: string; hideExecute?: boolean }) {
-  if (!plan) return null;
   const { toast } = useToast();
+  if (!plan) return null;
 
   const handleCopyAll = () => {
     const parts: string[] = [];
@@ -114,10 +119,11 @@ function PlanDetails({ plan, onExecute, videoId, hideExecute = false }: { plan: 
     toast({ title: "Copied to clipboard" });
   };
 
-  const primaryAction = plan.classLabel === "Evergreen Winner" ? "Repost & Repurpose"
-    : plan.classLabel === "Repost Candidate" ? "Repost This"
-    : plan.classLabel === "Retry (Second Shot)" ? "Retry With Changes"
-    : plan.classLabel === "Restructure" ? "Restructure This"
+  const primaryAction = plan.classLabel === "Evergreen" ? "Repost & Repurpose"
+    : plan.classLabel === "Retry-Hook" ? "Retry With Changes"
+    : plan.classLabel === "Retry-Timing" ? "Repost at Peak Time"
+    : plan.classLabel === "Seasonal" ? "Seasonal Update"
+    : plan.classLabel === "Event-Based" ? "Event Update"
     : "Archived";
 
   return (
@@ -229,7 +235,6 @@ function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
 }) {
   const style = CLASS_STYLES[opp.classLabel] || CLASS_STYLES["Archive"];
   const ClassIcon = style.icon;
-  const oneLiner = opp.reasons?.[0] || "High-potential opportunity for growth.";
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -244,38 +249,50 @@ function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
   return (
     <Card className="overflow-hidden border-border/40 hover:border-primary/40 transition-all group" data-testid={`card-top-opp-${opp.videoId}`}>
       <CardContent className="p-0">
-        <div className="relative aspect-video overflow-hidden bg-secondary">
-          {video?.thumbnailUrl ? (
-            <img src={video.thumbnailUrl} alt={opp.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground">No Thumbnail</div>
-          )}
-          <div className="absolute top-2 left-2 flex gap-1.5">
-            <Badge className={cn("uppercase text-[10px] font-bold border", style.bg, style.color, style.border)}>
-              <ClassIcon className="w-3 h-3 mr-1" /> {opp.classLabel}
-            </Badge>
+        <div className="flex flex-col md:flex-row">
+          <div className="relative w-full md:w-72 aspect-video overflow-hidden bg-secondary shrink-0">
+            {video?.thumbnailUrl ? (
+              <img src={video.thumbnailUrl} alt={opp.title} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground">No Thumbnail</div>
+            )}
+            <div className="absolute top-2 left-2 flex gap-1.5">
+              <Badge className={cn("uppercase text-[10px] font-bold border", style.bg, style.color, style.border)}>
+                <ClassIcon className="w-3 h-3 mr-1" /> {opp.classLabel}
+              </Badge>
+            </div>
           </div>
-          <div className="absolute top-2 right-2">
-            <Badge variant="secondary" className="bg-black/60 backdrop-blur-md text-yellow-400 border-none font-bold">
-              {opp.opportunityScore}
-            </Badge>
-          </div>
-        </div>
-        <div className="p-4 space-y-3">
-          <div>
-            <h3 className="font-bold text-sm line-clamp-1 mb-1" title={opp.title}>{opp.title}</h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">{oneLiner}</p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Button size="sm" className="w-full text-xs font-bold" onClick={() => onOpenPlan(opp)} data-testid={`button-open-plan-${opp.videoId}`}>
-              Open Plan
-            </Button>
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" className="flex-1 text-[10px] px-0" onClick={handleCopy} data-testid={`button-copy-package-${opp.videoId}`}>
-                <Copy className="w-3 h-3 mr-1" /> Copy Package
+          <div className="p-6 flex-1 flex flex-col justify-between min-w-0">
+            <div className="space-y-3">
+              <div className="flex justify-between items-start gap-4">
+                <h3 className="font-bold text-xl leading-tight text-foreground" data-testid={`text-title-${opp.videoId}`}>{opp.title}</h3>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-muted-foreground uppercase font-mono block mb-1">Growth Score</span>
+                  <div className="text-2xl font-bold text-yellow-400" data-testid={`text-score-${opp.videoId}`}>{opp.opportunityScore}</div>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
+                  <span className="text-[10px] uppercase text-primary font-bold block mb-1">Diagnosis</span>
+                  <p className="text-sm text-foreground/90 leading-relaxed">{opp.diagnosis}</p>
+                </div>
+                <div className="bg-secondary/20 border border-border/40 rounded-lg p-3">
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block mb-1">Next Action</span>
+                  <p className="text-sm text-foreground/80 leading-relaxed font-medium">{opp.nextAction}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 mt-6">
+              <Button size="sm" className="font-bold" onClick={() => onOpenPlan(opp)} data-testid={`button-open-plan-${opp.videoId}`}>
+                Open Plan
               </Button>
-              <Button size="sm" variant="secondary" className="flex-1 text-[10px] px-0" onClick={() => onExecute(opp.classLabel, opp.videoId)} data-testid={`button-mark-done-${opp.videoId}`}>
-                <CheckCircle2 className="w-3 h-3 mr-1" /> Mark Done
+              <Button size="sm" variant="secondary" onClick={handleCopy} data-testid={`button-copy-package-${opp.videoId}`}>
+                <Copy className="w-3.5 h-3.5 mr-2" /> Copy Package
+              </Button>
+              <Button size="sm" variant="secondary" className="hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/20" onClick={() => onExecute(opp.classLabel, opp.videoId)} data-testid={`button-mark-done-${opp.videoId}`}>
+                <CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Mark Done
               </Button>
             </div>
           </div>
@@ -285,39 +302,60 @@ function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
   );
 }
 
-function CalendarDay({ day, plan, onClick }: { day: Date; plan: any; onClick: () => void }) {
+function CalendarDay({ day, plan, onClick, onExecute }: { day: Date; plan: any; onClick: () => void; onExecute: (classLabel: string, videoId: string) => void }) {
   const isToday = isSameDay(day, new Date());
-  const dayName = format(day, "EEE");
-  const dayNum = format(day, "d");
+  const dayName = format(day, "EEEE");
+  const dateStr = format(day, "MMM do");
 
   return (
-    <div
+    <Collapsible
       className={cn(
-        "flex flex-col gap-2 p-3 rounded-xl border border-border/40 min-h-[120px] transition-all cursor-pointer hover:bg-secondary/20",
-        isToday ? "bg-primary/5 border-primary/30 ring-1 ring-primary/20" : "bg-card/50"
+        "group border border-border/40 rounded-xl overflow-hidden transition-all",
+        isToday ? "bg-primary/5 border-primary/30 ring-1 ring-primary/20" : "bg-card/50 hover:bg-secondary/10"
       )}
-      onClick={onClick}
       data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
     >
-      <div className="flex justify-between items-center">
-        <span className={cn("text-[10px] uppercase font-bold tracking-wider", isToday ? "text-primary" : "text-muted-foreground")}>
-          {dayName}
-        </span>
-        <span className={cn("text-sm font-bold", isToday && "text-primary")}>{dayNum}</span>
-      </div>
-      {plan ? (
-        <div className="mt-1 space-y-1.5">
-          <Badge variant="outline" className="text-[9px] h-4 px-1 border-primary/30 text-primary uppercase leading-none">
-            {plan.label}
-          </Badge>
-          <p className="text-[11px] leading-tight font-medium text-foreground line-clamp-3">{plan.title}</p>
+      <CollapsibleTrigger className="w-full text-left p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="min-w-[100px]">
+            <span className={cn("text-[10px] uppercase font-bold tracking-wider block", isToday ? "text-primary" : "text-muted-foreground")}>
+              {dayName}
+            </span>
+            <span className={cn("text-sm font-bold", isToday && "text-primary")}>{dateStr}</span>
+          </div>
+          {plan ? (
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="text-[10px] h-5 px-2 border-primary/30 text-primary uppercase whitespace-nowrap">
+                {plan.label}
+              </Badge>
+              <h4 className="text-sm font-medium text-foreground line-clamp-1">{plan.title}</h4>
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground italic">Rest Day / General Content</span>
+          )}
         </div>
-      ) : (
-        <div className="mt-auto">
-          <span className="text-[10px] text-muted-foreground italic">Rest Day</span>
+        <div className="flex items-center gap-4 ml-auto">
+          {plan && <span className="text-xs font-mono text-muted-foreground bg-secondary/30 px-2 py-1 rounded">{plan.time}</span>}
+          <ChevronDown className="w-4 h-4 text-muted-foreground group-data-[state=open]:rotate-180 transition-transform" />
         </div>
-      )}
-    </div>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="px-4 pb-4 pt-2 border-t border-border/20">
+          {plan ? (
+            <div className="space-y-4">
+              <PlanDetails 
+                plan={plan.opp.plan} 
+                videoId={plan.opp.videoId} 
+                onExecute={onExecute}
+                hideExecute={false}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Focus on community engagement or general channel maintenance today.</p>
+          )}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -327,6 +365,8 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [showAll, setShowAll] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [performanceDialog, setPerformanceDialog] = useState<{ open: boolean; executionId: string | null }>({ open: false, executionId: null });
+  const [metrics, setMetrics] = useState({ views: "", likes: "", comments: "", shares: "" });
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["/api/analyze", youtubeChannelId],
@@ -361,17 +401,39 @@ export default function Dashboard() {
 
   const executeMutation = useMutation({
     mutationFn: async ({ type, videoId }: { type: string; videoId?: string }) => {
-      return apiRequest("POST", "/api/execute", {
+      const res = await apiRequest("POST", "/api/execute", {
         channelId: youtubeChannelId,
         videoId: videoId || null,
         type,
       });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/executions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/analyze"] });
+      toast({ title: "Action marked as executed", description: "Would you like to record initial performance?" });
+      setSelectedPlan(null);
+      if (data.id) {
+        setPerformanceDialog({ open: true, executionId: data.id });
+      }
+    },
+  });
+
+  const performanceMutation = useMutation({
+    mutationFn: async ({ executionId, metrics }: { executionId: string; metrics: any }) => {
+      return apiRequest("POST", "/api/execution/performance", {
+        executionId,
+        actualViews: metrics.views ? parseInt(metrics.views) : undefined,
+        actualLikes: metrics.likes ? parseInt(metrics.likes) : undefined,
+        actualComments: metrics.comments ? parseInt(metrics.comments) : undefined,
+        actualShares: metrics.shares ? parseInt(metrics.shares) : undefined,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/executions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/analyze"] });
-      toast({ title: "Action marked as executed", description: "Come back later to rate the result." });
-      setSelectedPlan(null);
+      toast({ title: "Performance recorded", description: "This helps the engine improve its recommendations." });
+      setPerformanceDialog({ open: false, executionId: null });
+      setMetrics({ views: "", likes: "", comments: "", shares: "" });
     },
   });
 
@@ -452,8 +514,12 @@ export default function Dashboard() {
     .filter((o: any) => o.classLabel !== "Archive" && o.confidence !== "Low")
     .slice(0, 3);
   
+  const evergreenMoneyMakers = opportunities
+    .filter((o: any) => o.classLabel === "Evergreen" && o.opportunityScore > 40)
+    .slice(0, 5);
+  
   const seasonalInsights = analysis?.seasonalInsights || [];
-  const momentum = analysis?.momentum || { score: 0, trend: "flat", label: "Need Data", details: "" };
+  const channelHealth = analysis?.channelHealth || { score: 0, trend: "flat", label: "Need Data", details: "" };
   const overallScore = analysis?.overallOpportunityScore || 0;
 
   const handleExecute = (classLabel: string, videoId: string) => {
@@ -475,26 +541,26 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-8">
           <div className="flex flex-col items-end text-right">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Momentum</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Channel Health</span>
             <div className="flex items-center gap-1.5">
-              <span className="text-2xl font-bold text-foreground">{momentum.score}</span>
+              <span className="text-2xl font-bold text-foreground" data-testid="text-channel-health-score">{channelHealth.score}</span>
               <div className={cn(
                 "px-1.5 py-0.5 rounded flex items-center text-[10px] font-bold uppercase",
-                momentum.trend === "up" ? "bg-green-500/10 text-green-400" :
-                momentum.trend === "down" ? "bg-red-500/10 text-red-400" :
+                channelHealth.trend === "up" ? "bg-green-500/10 text-green-400" :
+                channelHealth.trend === "down" ? "bg-red-500/10 text-red-400" :
                 "bg-neutral-500/10 text-neutral-400"
               )}>
-                {momentum.trend === "up" ? <TrendingUp className="w-3 h-3 mr-1" /> :
-                 momentum.trend === "down" ? <TrendingUp className="w-3 h-3 mr-1 rotate-180" /> :
+                {channelHealth.trend === "up" ? <TrendingUp className="w-3 h-3 mr-1" /> :
+                 channelHealth.trend === "down" ? <TrendingUp className="w-3 h-3 mr-1 rotate-180" /> :
                  <Minus className="w-3 h-3 mr-1" />}
-                {momentum.trend}
+                {channelHealth.trend}
               </div>
             </div>
           </div>
           <div className="h-10 w-px bg-border/40" />
           <div className="flex flex-col items-end text-right">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Opp. Score</span>
-            <div className="text-2xl font-bold text-yellow-400">{overallScore}</div>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-mono mb-1">Growth Score</span>
+            <div className="text-2xl font-bold text-yellow-400" data-testid="text-growth-score">{overallScore}</div>
           </div>
         </div>
       </header>
@@ -518,7 +584,7 @@ export default function Dashboard() {
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold flex items-center gap-2">
-            <Zap className="w-5 h-5 text-primary" /> Today's Top 3
+            <Zap className="w-5 h-5 text-primary" /> Today's Moves
           </h2>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Show low-confidence</span>
@@ -530,14 +596,14 @@ export default function Dashboard() {
             />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="space-y-4">
           {(showAll ? opportunities.filter((o: any) => o.classLabel !== "Archive").slice(0, 3) : top3).map((opp: any) => (
             <TopOpportunityCard 
               key={opp.videoId} 
               opp={opp} 
               video={videos.find((v: any) => v.id === opp.videoId)}
               onExecute={handleExecute}
-              onOpenPlan={(opp) => setSelectedPlan(opp)}
+              onOpenPlan={setSelectedPlan}
             />
           ))}
         </div>
@@ -545,19 +611,62 @@ export default function Dashboard() {
 
       <section className="space-y-6">
         <h2 className="text-xl font-bold flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-muted-foreground" /> This Week Plan
+          <Calendar className="w-5 h-5 text-primary" /> This Week's Plan
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="flex flex-col gap-4">
           {calendarPlans.map(({ day, plan }, i) => (
             <CalendarDay 
               key={i} 
               day={day} 
               plan={plan} 
-              onClick={() => plan && setSelectedPlan(plan.opp)}
+              onExecute={handleExecute}
+              onClick={() => {}}
             />
           ))}
         </div>
       </section>
+
+      {evergreenMoneyMakers.length > 0 && (
+        <section className="space-y-6 pt-10 border-t border-border/40">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Star className="w-5 h-5 text-green-400" /> Evergreen Money Makers
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {evergreenMoneyMakers.map((opp: any) => (
+              <Card key={opp.videoId} className="bg-card hover:border-green-500/30 transition-all group overflow-hidden" data-testid={`card-evergreen-${opp.videoId}`}>
+                <CardContent className="p-4 flex gap-4">
+                  <div className="w-24 aspect-video rounded overflow-hidden bg-secondary shrink-0">
+                    <img 
+                      src={videos.find((v: any) => v.id === opp.videoId)?.thumbnailUrl} 
+                      alt={opp.title} 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold line-clamp-1 mb-1">{opp.title}</h4>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[10px] font-bold text-yellow-400 bg-black/40 border-none">
+                          {opp.opportunityScore}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground uppercase font-mono">Growth potential</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 py-0 font-bold" onClick={() => setSelectedPlan(opp)} data-testid={`button-evergreen-plan-${opp.videoId}`}>
+                        Open Plan
+                      </Button>
+                      <Button size="sm" variant="secondary" className="h-7 text-[10px] px-2 py-0" onClick={() => handleExecute("Evergreen", opp.videoId)} data-testid={`button-evergreen-repost-${opp.videoId}`}>
+                        Repost Content
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
       {recentExecs.length > 0 && (
         <section className="pt-10 border-t border-border/40">
@@ -576,15 +685,26 @@ export default function Dashboard() {
                       {videos.find((v: any) => v.id === exec.videoId)?.title || "Unknown Video"}
                     </h4>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "better" })}>
-                      <ThumbsUp className="w-3 h-3 mr-1 text-green-400" /> Better
-                    </Button>
-                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "same" })}>
-                      <Minus className="w-3 h-3 mr-1 text-neutral-400" /> Same
-                    </Button>
-                    <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "worse" })}>
-                      <ThumbsDown className="w-3 h-3 mr-1 text-red-400" /> Worse
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-2">
+                      <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "better" })} data-testid={`button-feedback-better-${exec.id}`}>
+                        <ThumbsUp className="w-3 h-3 mr-1 text-green-400" /> Better
+                      </Button>
+                      <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "same" })} data-testid={`button-feedback-same-${exec.id}`}>
+                        <Minus className="w-3 h-3 mr-1 text-neutral-400" /> Same
+                      </Button>
+                      <Button variant="secondary" size="sm" className="flex-1 text-[10px]" onClick={() => feedbackMutation.mutate({ executionId: exec.id, result: "worse" })} data-testid={`button-feedback-worse-${exec.id}`}>
+                        <ThumbsDown className="w-3 h-3 mr-1 text-red-400" /> Worse
+                      </Button>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full text-[10px] h-8" 
+                      onClick={() => setPerformanceDialog({ open: true, executionId: exec.id })}
+                      data-testid={`button-record-perf-${exec.id}`}
+                    >
+                      <Activity className="w-3 h-3 mr-1.5" /> Record Performance
                     </Button>
                   </div>
                 </CardContent>
@@ -594,6 +714,49 @@ export default function Dashboard() {
         </section>
       )}
 
+      <Dialog open={performanceDialog.open} onOpenChange={(open) => setPerformanceDialog({ open, executionId: open ? performanceDialog.executionId : null })}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Record Actual Performance</DialogTitle>
+            <DialogDescription>
+              Enter the results for this execution to help the engine learn. All fields are optional.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="views" className="text-right">Views</Label>
+              <Input id="views" type="number" value={metrics.views} onChange={(e) => setMetrics({ ...metrics, views: e.target.value })} className="col-span-3" data-testid="input-perf-views" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="likes" className="text-right">Likes</Label>
+              <Input id="likes" type="number" value={metrics.likes} onChange={(e) => setMetrics({ ...metrics, likes: e.target.value })} className="col-span-3" data-testid="input-perf-likes" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="comments" className="text-right">Comments</Label>
+              <Input id="comments" type="number" value={metrics.comments} onChange={(e) => setMetrics({ ...metrics, comments: e.target.value })} className="col-span-3" data-testid="input-perf-comments" />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="shares" className="text-right">Shares</Label>
+              <Input id="shares" type="number" value={metrics.shares} onChange={(e) => setMetrics({ ...metrics, shares: e.target.value })} className="col-span-3" data-testid="input-perf-shares" />
+            </div>
+          </div>
+          <div className="bg-secondary/20 p-3 rounded-md text-[11px] text-muted-foreground leading-relaxed">
+            <Info className="w-3 h-3 inline-block mr-1.5 mb-0.5" />
+            Recording actual results helps the engine learn and improve recommendations for your specific audience patterns.
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPerformanceDialog({ open: false, executionId: null })}>Cancel</Button>
+            <Button 
+              onClick={() => performanceDialog.executionId && performanceMutation.mutate({ executionId: performanceDialog.executionId, metrics })}
+              disabled={performanceMutation.isPending}
+              data-testid="button-save-performance"
+            >
+              {performanceMutation.isPending ? "Saving..." : "Save Results"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!selectedPlan} onOpenChange={(open) => !open && setSelectedPlan(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh]">
           <DialogHeader>
@@ -602,7 +765,7 @@ export default function Dashboard() {
                 {selectedPlan?.classLabel}
               </Badge>
               <Badge variant="secondary" className="text-[10px] font-bold">
-                Opp Score: {selectedPlan?.opportunityScore}
+                Growth Score: {selectedPlan?.opportunityScore}
               </Badge>
             </div>
             <DialogTitle className="text-xl md:text-2xl leading-tight">

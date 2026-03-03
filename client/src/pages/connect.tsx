@@ -59,7 +59,7 @@ export default function Connect() {
       });
       const data = await res.json();
       if (data.ok) {
-        toast({ title: "Import Successful", description: `Imported ${data.importedCount} ${platform} videos.` });
+        toast({ title: "Import Successful", description: `${data.importedCount} ${platform} videos imported and analyzed.` });
         queryClient.invalidateQueries({ queryKey: ["/api/status"] });
         queryClient.invalidateQueries({ queryKey: ["/api/content"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analyze"] });
@@ -151,25 +151,39 @@ export default function Connect() {
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary shrink-0">
               <Info className="w-5 h-5" />
             </div>
-            <div className="space-y-1">
-              <h3 className="font-semibold text-primary">Transcript Processing</h3>
-              <p className="text-sm text-muted-foreground">
-                Transcripts are fetched automatically for public videos during sync. Videos with transcripts get more accurate hook analysis.
-              </p>
+            <div className="space-y-4 flex-1">
+              <div>
+                <h3 className="font-semibold text-primary" data-testid="text-transcript-intelligence-title">Transcript Intelligence</h3>
+                <p className="text-sm text-muted-foreground">
+                  Transcripts are fetched automatically for public videos during sync. Videos with transcripts get more accurate hook analysis.
+                </p>
+              </div>
+
               {transcriptStats && (
-                <div className="flex gap-4 mt-3">
+                <div className="flex gap-6">
                   <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Ready</span>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Connected</span>
                     <span className="text-lg font-mono font-bold text-green-500" data-testid="status-transcripts-ready">{transcriptStats.ready}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Pending</span>
-                    <span className="text-lg font-mono font-bold text-yellow-500" data-testid="status-transcripts-pending">{transcriptStats.pending}</span>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Not Enabled</span>
+                    <span className="text-lg font-mono font-bold text-muted-foreground" data-testid="status-transcripts-pending">{transcriptStats.pending}</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Missing</span>
-                    <span className="text-lg font-mono font-bold text-muted-foreground" data-testid="status-transcripts-missing">{transcriptStats.missing}</span>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Missing</span>
+                    <span className="text-lg font-mono font-bold text-red-500" data-testid="status-transcripts-missing">{transcriptStats.missing}</span>
                   </div>
+                </div>
+              )}
+
+              {(transcriptStats && (transcriptStats.pending > 0 || transcriptStats.missing > 0)) && (
+                <div className="bg-background/50 border border-border/40 rounded-lg p-4 text-sm" data-testid="help-transcript-analysis">
+                  <p className="font-semibold mb-2">To enable transcript analysis:</p>
+                  <ul className="list-decimal list-inside space-y-1 text-muted-foreground">
+                    <li>Ensure your videos have auto-generated captions enabled on YouTube</li>
+                    <li>Captions are fetched automatically during each sync</li>
+                    <li>Videos with captions get more accurate hook scoring</li>
+                  </ul>
                 </div>
               )}
             </div>
@@ -184,7 +198,7 @@ export default function Connect() {
               </div>
               <div>
                 <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="text-connector-title">
-                  YouTube Data API
+                  {isConnected ? "YouTube — API Connected" : "YouTube — Not Connected"}
                   {isConnected && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-green-500/10 text-green-500 border border-green-500/20" data-testid="status-connected">
                       CONNECTED
@@ -322,7 +336,7 @@ export default function Connect() {
                 <Music2 className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold">TikTok Analytics</h2>
+                <h2 className="text-xl font-semibold" data-testid="text-tiktok-connector-title">TikTok — CSV Import <span className="text-xs font-normal text-muted-foreground ml-1">(API pending)</span></h2>
                 <p className="text-sm text-muted-foreground">Import your TikTok data via CSV</p>
               </div>
             </div>
@@ -340,6 +354,7 @@ export default function Connect() {
                     const file = e.target.files?.[0];
                     if (file) handleImportCSV('tiktok', file);
                   }}
+                  data-testid="input-tiktok-csv"
                 />
                 <button
                   onClick={() => document.getElementById('tiktok-upload')?.click()}
@@ -361,7 +376,7 @@ export default function Connect() {
                 <Instagram className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold">Instagram Insights</h2>
+                <h2 className="text-xl font-semibold" data-testid="text-instagram-connector-title">Instagram — CSV Import <span className="text-xs font-normal text-muted-foreground ml-1">(Meta review required)</span></h2>
                 <p className="text-sm text-muted-foreground">Import your Instagram data via CSV</p>
               </div>
             </div>
@@ -384,6 +399,7 @@ export default function Connect() {
                     const file = e.target.files?.[0];
                     if (file) handleImportCSV('instagram', file);
                   }}
+                  data-testid="input-instagram-csv"
                 />
                 <button
                   onClick={() => document.getElementById('instagram-upload')?.click()}

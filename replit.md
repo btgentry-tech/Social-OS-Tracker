@@ -1,7 +1,7 @@
 # Creator OS v2 — Intelligence Mode
 
 ## Overview
-A full-stack content intelligence system for YouTube creators (with TikTok/Instagram CSV import). Syncs channel data, analyzes thumbnails + hooks deterministically, classifies every video, generates per-video plans, and delivers plain-English action recommendations with explainable scores. No AI/OpenAI — all logic is deterministic/heuristic.
+A full-stack content intelligence system for YouTube creators (with TikTok/Instagram CSV import). Syncs channel data, analyzes thumbnails + hooks deterministically, classifies every video into 6 classes, generates per-video plans with nextAction + diagnosis, and delivers plain-English action recommendations with explainable scores and adaptive scoring weights. No AI/OpenAI — all logic is deterministic/heuristic.
 
 ## Architecture
 - **Frontend**: React + Vite + Tailwind v4, dark theme, wouter routing, TanStack Query
@@ -10,10 +10,10 @@ A full-stack content intelligence system for YouTube creators (with TikTok/Insta
 - **Image Analysis**: `sharp` for thumbnail metrics (brightness, contrast, entropy, edge density)
 
 ## Key Files
-- `shared/schema.ts` — Drizzle schema: videos (with analysis fields + platform + transcript), syncMetadata, executions, feedback, archetypeWeights
-- `server/routes.ts` — All API endpoints (clean AnalysisResult, CSV import, transcript stats)
-- `server/storage.ts` — DatabaseStorage class (IStorage interface)
-- `server/engine.ts` — Explainable Opportunity Engine: winner model, 5-class classification, per-video plans, 7-signal scoring, posting time inference, seasonality detection
+- `shared/schema.ts` — Drizzle schema: videos (with analysis fields + platform + transcript + userTags + nextAction), syncMetadata (with scoringWeights), executions (with actualViews/Likes/Comments/Shares + predictedLift + performanceRecordedAt), feedback, archetypeWeights
+- `server/routes.ts` — All API endpoints (clean AnalysisResult, CSV import, transcript stats, performance recording)
+- `server/storage.ts` — DatabaseStorage class (IStorage interface) with updateExecutionPerformance
+- `server/engine.ts` — Explainable Opportunity Engine: winner model, 6-class classification, per-video plans with nextAction + diagnosis, 7-signal scoring with adaptive weights, posting time inference, seasonality detection
 - `server/youtube.ts` — YouTube Data API v3 integration
 - `server/thumbnails.ts` — Thumbnail download + sharp analysis
 - `server/hooks.ts` — Deterministic hook scoring (verb density, curiosity words, etc.)
@@ -21,18 +21,30 @@ A full-stack content intelligence system for YouTube creators (with TikTok/Insta
 - `server/db.ts` — Database connection pool
 
 ## Opportunity Engine (server/engine.ts)
-### Classification System
-Every video is classified into one of 5 classes:
-- **Evergreen Winner**: Top 20% by views_ratio, >30 days old, not time-sensitive
-- **Repost Candidate**: Above-average performance, >14 days old
-- **Retry (Second Shot)**: Below-average, <60 days old, fixable issues identified
-- **Restructure**: Below-average, structural mismatch vs winners (wrong theme/format/thumbnail)
-- **Archive**: Time-sensitive content outside anniversary window
+### 6-Class Classification System
+Every video is classified into one of 6 classes:
+- **Evergreen**: Top 20% by views_ratio, >30 days old, not time-sensitive — proven content for repost/repurpose
+- **Retry-Hook**: Below-average views but fixable hook issues, <60 days old — rewrite hook and retry
+- **Retry-Timing**: Above-average potential, posted at wrong time — repost at peak time
+- **Seasonal**: Time-sensitive content currently out of season — archived until season returns
+- **Event-Based**: Tied to specific events that have passed — archived until anniversary window
+- **Archive**: Consistently underperformed or too old for retry — extract lessons and move on
+
+### Per-Video nextAction + diagnosis
+Each classified video gets:
+- `nextAction`: Plain-language instruction (e.g., "Repost this with fresh packaging")
+- `diagnosis`: Plain-language explanation of why it got this classification
+
+### Adaptive Scoring Weights (ScoringWeights)
+- Interface: `{ hook_weight, timing_weight, thumbnail_weight, novelty_weight, views_weight }`
+- Stored in `syncMetadata.scoringWeights`
+- `computeAdaptiveScoringWeights()` adjusts based on actual performance deltas from executions
+- Weights auto-tune when users record actual performance after posting
 
 ### Winner Model
 - Computes top-20% threshold from views_ratio distribution
 - Extracts common keywords, themes, formats from winners
-- Uses winner features to inform Restructure recommendations
+- Uses winner features to inform Retry/Archive recommendations
 
 ### Posting Time Inference
 - Analyzes publishedAt timestamps of top performers
@@ -63,10 +75,11 @@ Every video is classified into one of 5 classes:
 
 ### Per-Video Plans
 Each class generates a tailored plan:
-- **Repost**: schedule slots (7 days), 3 hook variants, caption starter, 3 CTA variants, hashtag pack
-- **Retry**: specific changes (hook rewrite, thumbnail redesign, pacing), plus schedule
-- **Evergreen Winner**: repost cadence, repurpose plan (clips/carousel/sequel), 2 sequel ideas
-- **Restructure**: mismatch analysis vs winners, new framing suggestion, structural changes
+- **Evergreen**: repost cadence, repurpose plan (clips/carousel/sequel), 2 sequel ideas
+- **Retry-Hook**: specific hook changes, new variants, plus schedule
+- **Retry-Timing**: optimal time slots, same content with better timing
+- **Seasonal**: flagged for resurface when season approaches
+- **Event-Based**: held until anniversary window or next event cycle
 - **Archive**: reason explanation, pattern extraction if high-performing
 
 ### Time-Sensitive Detection
@@ -78,9 +91,9 @@ Anniversary window check prevents archiving content near its original publicatio
 - result-first, mistake, contrarian, tool-reveal, curiosity
 
 ## Frontend Pages
-- `/` — Today (execution coach: Today's Top 3 + 7-day clickable calendar + seasonal insights)
-- `/connect` — YouTube API setup + TikTok/Instagram CSV import + transcript status
-- `/library` — Video inventory with class filter chips, platform filter, sorting, analysis drawer
+- `/` — Today (execution coach: "Today's Moves" full-width priority blocks + "This Week's Plan" vertical stacked calendar + "Evergreen Money Makers" section)
+- `/connect` — YouTube API setup (with connected/not-connected status) + TikTok/Instagram CSV import (with platform clarity labels) + Transcript Intelligence banner
+- `/library` — Video inventory with 6-class filter chips, platform filter, sorting, nextAction card, user tags editor, transcript status, analysis drawer
 - `/playbooks` — Static best-practice templates
 - `/settings` — System status and privacy info
 
@@ -90,16 +103,24 @@ Anniversary window check prevents archiving content near its original publicatio
 - `POST /api/sync/youtube` — Fetch latest 50 videos, trigger analysis + transcripts
 - `GET /api/content?channelId=` — Get all synced videos (with analysis fields)
 - `POST /api/notes` — Update video context notes
-- `POST /api/analyze` — Returns clean AnalysisResult: opportunities[], next7DaysPlan, warnings, momentum, seasonalInsights
-- `POST /api/execute` — Record executed action + update lastRecommendedAt
+- `POST /api/analyze` — Returns clean AnalysisResult: opportunities[], next7DaysPlan, warnings, channelHealth, seasonalInsights, evergreenCount
+- `POST /api/execute` — Record executed action + update lastRecommendedAt + store predictedLift
 - `POST /api/feedback` — Record better/same/worse feedback
 - `GET /api/executions?channelId=` — Get execution history
 - `GET /api/feedback?channelId=` — Get feedback history
 - `POST /api/import/csv` — Import TikTok/Instagram CSV (multipart form: file + platform + channelId)
 - `GET /api/transcript-stats?channelId=` — Transcript processing status counts
+- `POST /api/execution/performance` — Record actual views/likes/comments/shares for an execution
+- `POST /api/video/tags` — Set user-defined tags for a video
+
+## Performance Feedback Loop
+1. User marks action as Done → `predictedLift` stored (viewCount × opportunityScore/50)
+2. User records actual metrics via performance dialog → POST /api/execution/performance
+3. On next analysis, `computeAdaptiveScoringWeights()` compares predicted vs actual
+4. Scoring weights auto-adjust to improve future recommendations
 
 ## Persisted Analysis Fields (per video)
-viewsRatio, freshnessDays, decayBucket, titleKeywords[], similarityGroup, timeSensitive, classLabel, confidence, reasons[], plan (JSON), opportunityScore, scoreBreakdown (JSON), lastRecommendedAt, platform, transcript, transcriptStatus
+viewsRatio, freshnessDays, decayBucket, titleKeywords[], similarityGroup, timeSensitive, classLabel, confidence, reasons[], plan (JSON), opportunityScore, scoreBreakdown (JSON), lastRecommendedAt, platform, transcript, transcriptStatus, userTags[], nextAction
 
 ## Multi-Platform Support
 - `platform` field: 'youtube' (default), 'tiktok', 'instagram'
@@ -107,11 +128,17 @@ viewsRatio, freshnessDays, decayBucket, titleKeywords[], similarityGroup, timeSe
 - TikTok/Instagram: imported via CSV upload on Connect page
 - Synthetic IDs: `tk_<hash>` for TikTok, `ig_<hash>` for Instagram
 
+## Channel Health (replaces Momentum)
+- `channelHealth`: { score, trend, label, details }
+- Compares recent 5 videos average vs historical average
+- Labels: "Strong", "Growing", "Stable", "Needs Attention"
+
 ## Learning Loop
-Feedback (better/same/worse) adjusts archetype weights (repost/fix/newAngle) stored per channel.
+- Feedback (better/same/worse) adjusts archetype weights (repost/fix/newAngle) stored per channel
+- Performance recording adjusts adaptive scoring weights per channel
 
 ## Dependencies
-Key packages: express, drizzle-orm, pg, sharp, zod, zustand, wouter, tanstack/react-query, date-fns, lucide-react, csv-parse, multer
+Key packages: express, drizzle-orm, pg, sharp, zod, zustand, wouter, tanstack/react-query, date-fns, lucide-react, csv-parse, multer, @radix-ui/react-collapsible
 
 ## Data Flow
 1. User provides YouTube API Key + Channel ID on Connect page (or imports TikTok/IG CSV)
@@ -119,8 +146,8 @@ Key packages: express, drizzle-orm, pg, sharp, zod, zustand, wouter, tanstack/re
 3. Thumbnails downloaded to `data/thumbnails/` and analyzed with sharp
 4. Transcripts fetched in background for YouTube videos (auto-captions)
 5. Hook text extracted from transcripts (preferred) or descriptions, scored deterministically
-6. Full analysis runs: winner model → classification → plan generation → score computation → seasonality
-7. Analysis results persisted per-video in database
-8. Today page shows Top 3 opportunities + 7-day clickable calendar + seasonal insights
-9. Library shows full inventory with filter chips, sorting, and analysis drawer
-10. User marks actions done + provides feedback to train weights
+6. Full analysis runs: winner model → 6-class classification → plan generation → score computation → seasonality
+7. Analysis results persisted per-video in database (including nextAction, diagnosis)
+8. Today page shows "Today's Moves" (full-width priority blocks) + "This Week's Plan" (vertical calendar) + "Evergreen Money Makers"
+9. Library shows full inventory with 6-class filter chips, sorting, user tags, and analysis drawer
+10. User marks actions done + provides feedback + records actual performance to train weights

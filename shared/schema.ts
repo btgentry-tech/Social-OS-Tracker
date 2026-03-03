@@ -14,6 +14,7 @@ export const videos = pgTable("videos", {
   likeCount: integer("like_count").notNull().default(0),
   commentCount: integer("comment_count").notNull().default(0),
   tags: text("tags").array().default(sql`'{}'::text[]`),
+  userTags: text("user_tags").array().default(sql`'{}'::text[]`),
   thumbnailUrl: text("thumbnail_url"),
   thumbnailLocalPath: text("thumbnail_local_path"),
   thumbnailScore: real("thumbnail_score"),
@@ -41,6 +42,7 @@ export const videos = pgTable("videos", {
   scoreBreakdown: jsonb("score_breakdown"),
   lastRecommendedAt: text("last_recommended_at"),
   platform: varchar("platform", { length: 16 }).default("youtube"),
+  nextAction: text("next_action"),
 });
 
 export const insertVideoSchema = createInsertSchema(videos).omit({});
@@ -58,6 +60,7 @@ export const syncMetadata = pgTable("sync_metadata", {
   connectionMode: varchar("connection_mode", { length: 16 }).default("apikey"),
   winnerThreshold: real("winner_threshold").default(0),
   minViewsThreshold: integer("min_views_threshold").default(100),
+  scoringWeights: jsonb("scoring_weights").default(sql`'{"hook_weight":1.0,"timing_weight":1.0,"thumbnail_weight":1.0,"novelty_weight":1.0,"views_weight":1.0}'::jsonb`),
 });
 
 export const insertSyncMetadataSchema = createInsertSchema(syncMetadata).omit({ id: true });
@@ -71,6 +74,12 @@ export const executions = pgTable("executions", {
   type: varchar("type", { length: 32 }).notNull(),
   executedAt: text("executed_at").notNull(),
   details: jsonb("details"),
+  actualViews: integer("actual_views"),
+  actualLikes: integer("actual_likes"),
+  actualComments: integer("actual_comments"),
+  actualShares: integer("actual_shares"),
+  predictedLift: real("predicted_lift"),
+  performanceRecordedAt: text("performance_recorded_at"),
 });
 
 export const insertExecutionSchema = createInsertSchema(executions).omit({ id: true });

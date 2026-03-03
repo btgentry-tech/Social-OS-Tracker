@@ -4,7 +4,8 @@ import { storage } from "./storage";
 import { fetchChannelVideos, testYouTubeConnection } from "./youtube";
 import { downloadAndAnalyzeThumbnail } from "./thumbnails";
 import { scoreHook, extractHookText } from "./hooks";
-import { runFullAnalysis, adjustWeightsFromFeedback } from "./engine";
+import { runFullAnalysis, adjustWeightsFromFeedback, computeAdaptiveScoringWeights, DEFAULT_SCORING_WEIGHTS } from "./engine";
+import type { ScoringWeights } from "./engine";
 import { fetchYouTubeTranscript } from "./transcripts";
 import { parse } from "csv-parse/sync";
 import { createHash } from "crypto";
@@ -147,7 +148,22 @@ export async function registerRoutes(
       }
 
       const minViews = meta?.minViewsThreshold || 100;
-      const result = runFullAnalysis(vids, execs, fb, adjustedWeights, meta?.lastSyncAt || null, minViews);
+      const rawScoringWeights = (meta?.scoringWeights as ScoringWeights) || DEFAULT_SCORING_WEIGHTS;
+      const scoringWeights = computeAdaptiveScoringWeights(rawScoringWeights, execs);
+      if (JSON.stringify(scoringWeights) !== JSON.stringify(rawScoringWeights) && meta) {
+        await storage.upsertSyncMetadata({
+          channelId: meta.channelId,
+          apiKey: meta.apiKey,
+          lastSyncAt: meta.lastSyncAt,
+          videoCount: meta.videoCount,
+          channelAvgViews: meta.channelAvgViews,
+          connectionMode: meta.connectionMode,
+          winnerThreshold: meta.winnerThreshold,
+          minViewsThreshold: meta.minViewsThreshold,
+          scoringWeights: scoringWeights as any,
+        });
+      }
+      const result = runFullAnalysis(vids, execs, fb, adjustedWeights, meta?.lastSyncAt || null, minViews, scoringWeights);
 
       persistAnalysisResults(result.opportunities);
 
@@ -163,12 +179,22 @@ export async function registerRoutes(
       if (!channelId || !type) {
         return res.status(400).json({ message: "channelId and type are required." });
       }
+
+      let predictedLift: number | null = null;
+      if (videoId) {
+        const video = await storage.getVideo(videoId);
+        if (video) {
+          predictedLift = video.viewCount * ((video.opportunityScore || 50) / 50);
+        }
+      }
+
       const exec = await storage.createExecution({
         channelId,
         videoId: videoId || null,
         type,
         executedAt: new Date().toISOString(),
         details: details || null,
+        predictedLift,
       });
 
       if (videoId) {
@@ -178,6 +204,41 @@ export async function registerRoutes(
       }
 
       res.json(exec);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/execution/performance", async (req, res) => {
+    try {
+      const { executionId, actualViews, actualLikes, actualComments, actualShares } = req.body;
+      if (!executionId) {
+        return res.status(400).json({ message: "executionId is required." });
+      }
+      const exec = await storage.updateExecutionPerformance(executionId, {
+        actualViews: actualViews ?? null,
+        actualLikes: actualLikes ?? null,
+        actualComments: actualComments ?? null,
+        actualShares: actualShares ?? null,
+        performanceRecordedAt: new Date().toISOString(),
+      });
+      if (!exec) {
+        return res.status(404).json({ message: "Execution not found." });
+      }
+      res.json(exec);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/video/tags", async (req, res) => {
+    try {
+      const { videoId, tags } = req.body;
+      if (!videoId || !Array.isArray(tags)) {
+        return res.status(400).json({ message: "videoId and tags array required." });
+      }
+      const updated = await storage.updateVideoAnalysis(videoId, { userTags: tags });
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -372,6 +433,7 @@ async function persistAnalysisResults(opportunities: any[]) {
         titleKeywords: opp.titleKeywords,
         similarityGroup: opp.similarityGroup,
         timeSensitive: opp.timeSensitive,
+        nextAction: opp.nextAction,
       });
     } catch (err) {
       console.error(`Failed to persist analysis for ${opp.videoId}:`, err);

@@ -14,10 +14,11 @@ type SortKey = "score" | "views" | "date" | "class";
 type PlatformFilter = "all" | "youtube" | "tiktok" | "instagram";
 
 const CLASS_CONFIG: Record<string, { color: string; bg: string; border: string; icon: any; short: string; label: string }> = {
-  "Evergreen Winner": { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: Star, short: "Winners", label: "Evergreen Winner" },
-  "Repost Candidate": { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", icon: RotateCcw, short: "Repost", label: "Repost Candidate" },
-  "Retry (Second Shot)": { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: RefreshCw, short: "Retry", label: "Retry (Second Shot)" },
-  "Restructure": { color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", icon: Wrench, short: "Restructure", label: "Restructure" },
+  "Evergreen": { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", icon: Star, short: "Evergreen", label: "Evergreen" },
+  "Retry-Hook": { color: "text-yellow-400", bg: "bg-yellow-500/10", border: "border-yellow-500/20", icon: RefreshCw, short: "Retry-Hook", label: "Retry-Hook" },
+  "Retry-Timing": { color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/20", icon: RotateCcw, short: "Retry-Timing", label: "Retry-Timing" },
+  "Seasonal": { color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", icon: Music2, short: "Seasonal", label: "Seasonal" },
+  "Event-Based": { color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", icon: Wrench, short: "Event", label: "Event-Based" },
   "Archive": { color: "text-neutral-400", bg: "bg-neutral-500/10", border: "border-neutral-500/20", icon: Archive, short: "Archive", label: "Archive" },
 };
 
@@ -35,8 +36,10 @@ const PLATFORM_ICONS: Record<string, any> = {
 
 function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () => void; onSaveNote: (id: string, note: string) => void }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [note, setNote] = useState(video.notes || "");
   const [isEditingNote, setIsEditingNote] = useState(false);
+  const [newTag, setNewTag] = useState("");
   
   const plan = video.plan;
   const classLabel = video.classLabel || "Unknown";
@@ -44,6 +47,30 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
   const ClassIcon = style.icon;
   const reasons = Array.isArray(video.reasons) ? video.reasons : [];
   const breakdown = video.scoreBreakdown;
+
+  const tagMutation = useMutation({
+    mutationFn: async (tags: string[]) => {
+      return apiRequest("POST", "/api/video/tags", { videoId: video.id, tags });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+    },
+  });
+
+  const handleAddTag = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && newTag.trim()) {
+      const currentTags = video.userTags || [];
+      if (!currentTags.includes(newTag.trim())) {
+        tagMutation.mutate([...currentTags, newTag.trim()]);
+      }
+      setNewTag("");
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    const currentTags = video.userTags || [];
+    tagMutation.mutate(currentTags.filter((t: string) => t !== tagToRemove));
+  };
 
   const handleCopy = () => {
     const parts: string[] = [];
@@ -59,6 +86,13 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
     onSaveNote(video.id, note);
     setIsEditingNote(false);
   };
+
+  const getTranscriptStatusInfo = (status: string | null) => {
+    if (status === 'ready') return { label: 'Connected', color: 'text-green-400' };
+    if (status === 'missing') return { label: 'Missing', color: 'text-red-400' };
+    return { label: 'Not Enabled', color: 'text-neutral-400' };
+  };
+  const transcriptInfo = getTranscriptStatusInfo(video.transcriptStatus);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="drawer-plan">
@@ -94,6 +128,13 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
               </div>
             </div>
           </div>
+
+          {video.nextAction && (
+            <div className="bg-primary/10 border border-primary/20 rounded-lg p-4" data-testid="card-next-action">
+              <h4 className="text-[10px] uppercase text-primary font-bold mb-1">Recommended Next Action</h4>
+              <p className="text-sm font-medium">{video.nextAction}</p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             {video.opportunityScore != null && (
@@ -147,10 +188,33 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
           )}
 
           <div>
+            <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-2">User Tags</h4>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {(video.userTags || []).map((tag: string) => (
+                <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-secondary rounded text-xs" data-testid={`tag-${tag}`}>
+                  {tag}
+                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-destructive" data-testid={`button-remove-tag-${tag}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder="Add tag and press Enter..."
+              value={newTag}
+              onChange={e => setNewTag(e.target.value)}
+              onKeyDown={handleAddTag}
+              className="w-full bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:border-primary"
+              data-testid="input-add-tag"
+            />
+          </div>
+
+          <div>
             <h4 className="text-[10px] uppercase text-muted-foreground font-mono mb-2 flex justify-between items-center">
               Notes
               {!isEditingNote && (
-                <button onClick={() => setIsEditingNote(true)} className="text-primary hover:underline">Edit</button>
+                <button onClick={() => setIsEditingNote(true)} className="text-primary hover:underline" data-testid="button-edit-note">Edit</button>
               )}
             </h4>
             {isEditingNote ? (
@@ -160,14 +224,15 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
                   onChange={e => setNote(e.target.value)}
                   className="w-full h-24 bg-background border border-border rounded p-2 text-sm focus:outline-none focus:border-primary"
                   placeholder="Add custom context for the engine..."
+                  data-testid="textarea-note"
                 />
                 <div className="flex gap-2">
-                  <button onClick={saveNote} className="px-3 py-1 bg-primary text-primary-foreground rounded text-xs">Save</button>
-                  <button onClick={() => { setNote(video.notes || ""); setIsEditingNote(false); }} className="px-3 py-1 bg-secondary rounded text-xs">Cancel</button>
+                  <button onClick={saveNote} className="px-3 py-1 bg-primary text-primary-foreground rounded text-xs" data-testid="button-save-note">Save</button>
+                  <button onClick={() => { setNote(video.notes || ""); setIsEditingNote(false); }} className="px-3 py-1 bg-secondary rounded text-xs" data-testid="button-cancel-note">Cancel</button>
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground italic bg-secondary/10 px-3 py-2 rounded">
+              <p className="text-sm text-muted-foreground italic bg-secondary/10 px-3 py-2 rounded" data-testid="text-video-note">
                 {video.notes || "No notes added yet."}
               </p>
             )}
@@ -175,7 +240,7 @@ function PlanDrawer({ video, onClose, onSaveNote }: { video: any; onClose: () =>
 
           <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/20 px-3 py-2 rounded border border-border/20">
             <FileText className="w-3.5 h-3.5" />
-            Transcript Status: <span className={`font-medium capitalize ${video.transcriptStatus === 'ready' ? 'text-green-400' : ''}`}>{video.transcriptStatus || 'Pending'}</span>
+            Transcript Status: <span className={`font-medium capitalize ${transcriptInfo.color}`} data-testid="status-transcript">{transcriptInfo.label}</span>
           </div>
 
           {plan && (

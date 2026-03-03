@@ -21,6 +21,7 @@ export interface IStorage {
 
   getExecutions(channelId: string): Promise<Execution[]>;
   createExecution(data: InsertExecution): Promise<Execution>;
+  updateExecutionPerformance(id: string, data: { actualViews: number | null; actualLikes: number | null; actualComments: number | null; actualShares: number | null; performanceRecordedAt: string }): Promise<Execution | undefined>;
 
   getFeedback(channelId: string): Promise<Feedback[]>;
   createFeedback(data: InsertFeedback): Promise<Feedback>;
@@ -101,6 +102,11 @@ export class DatabaseStorage implements IStorage {
 
   async createExecution(data: InsertExecution): Promise<Execution> {
     const [result] = await db.insert(executions).values(data).returning();
+    return result;
+  }
+
+  async updateExecutionPerformance(id: string, data: { actualViews: number | null; actualLikes: number | null; actualComments: number | null; actualShares: number | null; performanceRecordedAt: string }): Promise<Execution | undefined> {
+    const [result] = await db.update(executions).set(data).where(eq(executions.id, id)).returning();
     return result;
   }
 
