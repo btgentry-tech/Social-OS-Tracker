@@ -1,3 +1,4 @@
+import { getTrendingTopics, matchTrends } from "./trendRadar"
 import type { Video, Execution, Feedback } from "@shared/schema";
 
 export type ClassLabel = "Evergreen" | "Retry-Hook" | "Retry-Timing" | "Seasonal" | "Event-Based" | "Archive";
