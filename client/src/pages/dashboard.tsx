@@ -276,9 +276,19 @@ function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
                 <div className="bg-primary/5 border border-primary/10 rounded-lg p-3">
                   <span className="text-[10px] uppercase text-primary font-bold block mb-1">Diagnosis</span>
                   <p className="text-sm text-foreground/90 leading-relaxed">{opp.diagnosis}</p>
+                  {opp.plan?.hookVariants?.length > 0 && (
+  <div className="mt-3 text-xs bg-black/30 p-3 rounded border border-border">
+    <span className="uppercase text-[10px] text-muted-foreground font-bold">
+      Suggested Hook
+    </span>
+    <p className="mt-1 font-medium text-white">
+      {opp.plan.hookVariants[0]}
+    </p>
+  </div>
+)}
                 </div>
                 <div className="bg-secondary/20 border border-border/40 rounded-lg p-3">
-                  <span className="text-[10px] uppercase text-muted-foreground font-bold block mb-1">Next Action</span>
+                  <span className="text-[10px] uppercase text-muted-foreground font-bold block mb-1">Operator Instruction</span>
                   <p className="text-sm text-foreground/80 leading-relaxed font-medium">{opp.nextAction}</p>
                 </div>
               </div>
