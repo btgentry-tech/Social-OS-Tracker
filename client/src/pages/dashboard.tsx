@@ -8,7 +8,6 @@ import {
   Clock, Star, RotateCcw, Wrench, Archive, RefreshCw,
   Eye, Sparkles, CheckCircle2, ChevronRight, X, Minus
 } from "lucide-react";
-import { TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
