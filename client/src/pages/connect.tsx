@@ -9,9 +9,9 @@ import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 
 export default function Connect() {
-  const [, setLocation] = useLocation();
   const { youtubeChannelId, setChannelId, clearChannelId } = usePersistedStore();
   const { youtubeApiKey, setApiKey, isSyncing, setSyncing } = useSessionStore();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -120,6 +120,7 @@ export default function Connect() {
         title: "Sync Complete",
         description: `Ingested ${data.videoCount} videos. Thumbnail + hook analysis running in background.`,
       });
+      setLocation("/");
     } catch (error: any) {
       toast({ variant: "destructive", title: "Sync Failed", description: error.message });
     } finally {
