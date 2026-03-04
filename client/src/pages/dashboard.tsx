@@ -237,14 +237,23 @@ function TopOpportunityCard({ opp, video, onExecute, onOpenPlan }: {
   const ClassIcon = style.icon;
 
   const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const plan = opp.plan;
-    const parts: string[] = [];
-    if (plan.hookVariants?.length) parts.push(`Hooks:\n${plan.hookVariants.map((h: string) => `- ${h}`).join("\n")}`);
-    if (plan.captionStarter) parts.push(`Caption: ${plan.captionStarter}`);
-    if (plan.ctaVariants?.length) parts.push(`CTAs:\n${plan.ctaVariants.map((c: string) => `- ${c}`).join("\n")}`);
-    navigator.clipboard.writeText(parts.join("\n\n"));
-  };
+  e.stopPropagation();
+  const plan = opp.plan;
+
+  // If backend sends a best slot, include it (optional)
+  const bestSlot =
+    opp.bestNextSlot?.day && opp.bestNextSlot?.time
+      ? `Best repost slot: ${opp.bestNextSlot.day} @ ${opp.bestNextSlot.time}`
+      : null;
+
+  // Copy a concise package instead of dumping everything
+  const hook = plan?.hookVariants?.[0] ? `Hook: ${plan.hookVariants[0]}` : null;
+  const caption = plan?.captionStarter ? `Caption: ${plan.captionStarter}` : null;
+  const hashtags = plan?.hashtagPack?.length ? `Hashtags: ${plan.hashtagPack.join(" ")}` : null;
+
+  const text = [bestSlot, hook, caption, hashtags].filter(Boolean).join("\n");
+  navigator.clipboard.writeText(text || opp.title);
+};
 
   return (
     <Card className="overflow-hidden border-border/40 hover:border-primary/40 transition-all group" data-testid={`card-top-opp-${opp.videoId}`}>
