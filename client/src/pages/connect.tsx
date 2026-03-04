@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { useState } from "react";
 import { usePersistedStore, useSessionStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 
 export default function Connect() {
+  const [, setLocation] = useLocation();
   const { youtubeChannelId, setChannelId, clearChannelId } = usePersistedStore();
   const { youtubeApiKey, setApiKey, isSyncing, setSyncing } = useSessionStore();
   const { toast } = useToast();
@@ -103,6 +105,7 @@ export default function Connect() {
   const handleSync = async () => {
     if (!youtubeChannelId) {
       toast({ variant: "destructive", title: "Test Connection First" });
+      
       return;
     }
     setSyncing(true);
