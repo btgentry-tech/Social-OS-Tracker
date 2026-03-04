@@ -1,4 +1,4 @@
-import type { Video, Execution, Feedback } from "@shared/schema";
+import type { Video, Execution, Feedback } from "../shared/schema";
 import { getTrendingTopics, matchTrends } from "./trendRadar"
 
 export type ClassLabel = "Evergreen" | "Retry-Hook" | "Retry-Timing" | "Seasonal" | "Event-Based" | "Archive";
