@@ -387,7 +387,7 @@ export default function Dashboard() {
   const [performanceDialog, setPerformanceDialog] = useState<{ open: boolean; executionId: string | null }>({ open: false, executionId: null });
   const [metrics, setMetrics] = useState({ views: "", likes: "", comments: "", shares: "" });
 
-  const { data: analysis, isLoading } = useQuery({
+  const { data: analysis, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/analyze", youtubeChannelId],
     queryFn: async () => {
       if (!youtubeChannelId) return null;
@@ -493,24 +493,75 @@ export default function Dashboard() {
     });
   }, [analysis]);
 
-  if (!youtubeChannelId || (!analysis && !isLoading)) {
-    return (
-      <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500">
-        <div className="w-24 h-24 mb-6 rounded-full bg-secondary/50 border border-border/50 flex items-center justify-center">
-          <Activity className="w-10 h-10 text-muted-foreground opacity-50" />
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight mb-2" data-testid="text-welcome">Welcome to Creator OS</h1>
-        <p className="text-muted-foreground max-w-md mb-8">
-          Connect your YouTube channel to see exactly what you should do next to grow your audience.
-        </p>
-        <Link href="/connect">
-          <Button size="lg" className="font-bold gap-2" data-testid="button-connect">
-            <Zap className="w-5 h-5" /> Connect YouTube
-          </Button>
-        </Link>
+  // 1) Not connected → show Welcome
+if (!youtubeChannelId) {
+  return (
+    <div className="h-full w-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in duration-500">
+      <div className="w-24 h-24 mb-6 rounded-full bg-secondary/50 border border-border/50 flex items-center justify-center">
+        <Activity className="w-10 h-10 text-muted-foreground opacity-50" />
       </div>
-    );
-  }
+      <h1 className="text-3xl font-bold tracking-tight mb-2" data-testid="text-welcome">Welcome to Creator OS</h1>
+      <p className="text-muted-foreground max-w-md mb-8">
+        Connect your YouTube channel to see exactly what you should do next to grow your audience.
+      </p>
+      <Link href="/connect">
+        <Button size="lg" className="font-bold gap-2" data-testid="button-connect">
+          <Zap className="w-5 h-5" /> Connect YouTube
+        </Button>
+      </Link>
+    </div>
+  );
+}
+
+// 2) Connected, but analysis failed → show ERROR (instead of Welcome)
+if (isError) {
+  const msg =
+    (error as any)?.message ||
+    "Analyze request failed. Check the server logs for the real error.";
+
+  return (
+    <div className="max-w-3xl mx-auto p-6 md:p-10 space-y-4">
+      <Card className="border-red-500/30 bg-red-500/5">
+        <CardContent className="p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+            <h2 className="text-lg font-bold">Analysis failed</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            You are connected (channelId: <span className="font-mono">{youtubeChannelId}</span>) but the backend analysis endpoint errored.
+          </p>
+          <pre className="text-xs bg-black/30 border border-border rounded p-3 overflow-auto">
+            {msg}
+          </pre>
+          <div className="flex gap-2">
+            <Button onClick={() => refetch()} className="font-bold">
+              Retry Analysis
+            </Button>
+            <Link href="/connect">
+              <Button variant="secondary">Back to Connect</Button>
+            </Link>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            In Replit, open the <b>Console</b> / <b>Logs</b> — the server prints the real stack trace when /api/analyze fails.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// 3) Connected but analysis hasn’t returned yet (rare edge) → show loading-ish state
+if (!analysis && isLoading) {
+  return (
+    <div className="max-w-6xl mx-auto p-4 md:p-8 pt-8 pb-20 animate-pulse">
+      <div className="h-10 bg-secondary/30 rounded w-1/3 mb-4" />
+      <div className="h-6 bg-secondary/20 rounded w-2/3 mb-10" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        {[1, 2, 3].map(i => <div key={i} className="aspect-[4/5] bg-card border rounded-xl" />)}
+      </div>
+    </div>
+  );
+}
 
   if (isLoading) {
     return (
