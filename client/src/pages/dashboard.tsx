@@ -510,9 +510,10 @@ export default function Dashboard() {
   }
 
   const opportunities = analysis?.opportunities || [];
-  const top3 = opportunities
-    .filter((o: any) => o.classLabel !== "Archive" && o.confidence !== "Low")
-    .slice(0, 3);
+  const executionQueue = opportunities
+  .filter((o: any) => o.classLabel !== "Archive")
+  .sort((a: any, b: any) => b.opportunityScore - a.opportunityScore)
+  .slice(0, 3);
   
   const evergreenMoneyMakers = opportunities
     .filter((o: any) => o.classLabel === "Evergreen" && o.opportunityScore > 40)
