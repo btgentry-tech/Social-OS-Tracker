@@ -593,32 +593,66 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {trendMatches.length > 0 && (
-  <Card className="bg-yellow-500/5 border-yellow-500/20">
-    <CardContent className="p-4 flex items-center gap-4">
+      {trendMatches.length > 0 && (() => {
+  const tm = trendMatches[0];
+  const video = videos.find((v: any) => v.id === tm.videoId);
+  const videoUrl =
+    video?.videoUrl ||
+    (video?.platform === "youtube" && video?.externalId
+      ? `https://www.youtube.com/watch?v=${video.externalId}`
+      : null);
 
-      <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
-        <TrendingUp className="w-5 h-5 text-yellow-400" />
-      </div>
+  return (
+    <Card className="bg-yellow-500/5 border-yellow-500/20" data-testid="card-trend-opportunity">
+      <CardContent className="p-4 flex items-center gap-4">
+        <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center shrink-0">
+          <TrendingUp className="w-5 h-5 text-yellow-400" />
+        </div>
 
-      <div className="flex-1">
-        <h4 className="text-sm font-bold text-yellow-400">
-          Trend Opportunity
-        </h4>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-bold text-yellow-400">Trend Opportunity</h4>
+            <Badge variant="secondary" className="text-[10px] font-bold">
+              Match Score: {tm.score ?? "—"}
+            </Badge>
+          </div>
 
-        <p className="text-xs text-muted-foreground">
-          Trending topic detected that matches your content.
-        </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Trend matched: <span className="font-semibold text-foreground/90">{tm.bestTrend || "Unknown trend"}</span>
+          </p>
 
-        <p className="text-sm font-medium mt-1">
-          {trendMatches[0].title}
-        </p>
+          {tm.why && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+              {tm.why}
+            </p>
+          )}
 
-      </div>
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium line-clamp-1">
+              {tm.title}
+            </p>
 
-    </CardContent>
-  </Card>
-)}
+            {videoUrl ? (
+              <a
+                href={videoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline underline-offset-2"
+                data-testid="link-trend-video"
+              >
+                Open video
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">
+                (No video link available)
+              </span>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+})()}
 
       <section className="space-y-6">
         <div className="flex items-center justify-between">
