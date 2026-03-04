@@ -1,5 +1,5 @@
-import { getTrendingTopics, matchTrends } from "./trendRadar"
 import type { Video, Execution, Feedback } from "@shared/schema";
+import { getTrendingTopics, matchTrends } from "./trendRadar"
 
 export type ClassLabel = "Evergreen" | "Retry-Hook" | "Retry-Timing" | "Seasonal" | "Event-Based" | "Archive";
 export type ConfidenceLevel = "High" | "Medium" | "Low";
@@ -91,6 +91,7 @@ export interface AnalysisResult {
   winnerCount: number;
   winnerThreshold: number;
   seasonalInsights: string[];
+  trendMatches?: any[];
   evergreenCount: number;
 }
 
@@ -136,7 +137,7 @@ const HOOK_TEMPLATES = {
 
 const POSTING_TIMES = ["9:00 AM", "11:00 AM", "1:00 PM", "3:00 PM", "5:00 PM"];
 
-export function runFullAnalysis(
+export async function runFullAnalysis(
   videos: Video[],
   executions: Execution[],
   feedbackList: Feedback[],
@@ -163,8 +164,12 @@ export function runFullAnalysis(
   const recentFormats = videos.slice(0, 5).map(v => v.format).filter(Boolean);
 
   const winnerFeatures = extractWinnerFeatures(videos, winnerThreshold, minViewsThreshold);
-  const seasonalInsights = detectSeasonality(videos, winnerThreshold);
+const seasonalInsights = detectSeasonality(videos, winnerThreshold);
 
+// TREND SCANNER
+const trends = await getTrendingTopics();
+const trendMatches = matchTrends(videos, trends);
+  
   const opportunities: VideoOpportunity[] = videos.map(v => {
     const viewsRatio = avgViews > 0 ? v.viewCount / avgViews : 0;
     const pubDate = new Date(v.publishedAt).getTime();
@@ -237,18 +242,19 @@ export function runFullAnalysis(
   ));
 
   return {
-    opportunities,
-    next7DaysPlan,
-    warnings,
-    channelHealth,
-    overallOpportunityScore,
-    videoCount: videos.length,
-    lastSync,
-    winnerCount: opportunities.filter(o => o.classLabel === "Evergreen").length,
-    winnerThreshold: Math.round(winnerThreshold * 100) / 100,
-    seasonalInsights,
-    evergreenCount: opportunities.filter(o => o.classLabel === "Evergreen").length,
-  };
+  opportunities,
+  next7DaysPlan,
+  warnings,
+  channelHealth,
+  overallOpportunityScore,
+  videoCount: videos.length,
+  lastSync,
+  winnerCount: opportunities.filter(o => o.classLabel === "Evergreen").length,
+  winnerThreshold: Math.round(winnerThreshold * 100) / 100,
+  seasonalInsights,
+  trendMatches,
+  evergreenCount: opportunities.filter(o => o.classLabel === "Evergreen").length,
+};
 }
 
 function computeWinnerThreshold(videos: Video[]): number {
