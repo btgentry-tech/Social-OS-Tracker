@@ -153,6 +153,7 @@ export async function runFullAnalysis(
   const now = Date.now();
   const avgViews = avg(videos.map(v => v.viewCount));
   const winnerThreshold = computeWinnerThreshold(videos);
+    const trendingTopics = await getTrendingTopics();
 
   const winners = videos.filter(v => {
     const ratio = avgViews > 0 ? v.viewCount / avgViews : 0;
@@ -166,9 +167,6 @@ export async function runFullAnalysis(
   const winnerFeatures = extractWinnerFeatures(videos, winnerThreshold, minViewsThreshold);
 const seasonalInsights = detectSeasonality(videos, winnerThreshold);
 
-// TREND SCANNER
-const trends = await getTrendingTopics();
-const trendMatches = matchTrends(videos, trends);
   
   const opportunities: VideoOpportunity[] = videos.map(v => {
     const viewsRatio = avgViews > 0 ? v.viewCount / avgViews : 0;
@@ -181,6 +179,11 @@ const trendMatches = matchTrends(videos, trends);
     const titleKeywords = extractTitleKeywords(v.title);
     const timeSensitive = checkTimeSensitive(v.notes, v.title);
     const similarityGroup = computeSimilarityGroup(v, videos);
+    // Match this video against current trends
+const trendMatches = matchTrends(
+  `${v.title} ${v.description || ""} ${v.notes || ""} ${(v.tags || []).join(" ")}`,
+  trendingTopics
+);
 
     const themeCount = recentThemes.filter(t => t === v.theme).length;
     const isNovel = !recentThemes.includes(v.theme!) || !recentFormats.includes(v.format!);
@@ -200,7 +203,14 @@ const trendMatches = matchTrends(videos, trends);
       repetitionPenalty, timeSensitive, hookScore,
       v.transcriptStatus === 'ready', scoringWeights
     );
-    const opportunityScore = computeOpportunityScore(scoreBreakdown);
+    const opportunityScoreBase = computeOpportunityScore(scoreBreakdown);
+
+// Small bonus if video aligns with a current trend
+const trendBonus = trendMatches.length > 0
+  ? Math.min(8, Math.round(trendMatches[0].score / 20))
+  : 0;
+
+const opportunityScore = Math.min(100, opportunityScoreBase + trendBonus);
 
     const plan = generatePlan(
       v, classLabel, viewsRatio, freshnessDays, thumbnailScore,
@@ -224,8 +234,9 @@ const trendMatches = matchTrends(videos, trends);
       timeSensitive,
       similarityGroup,
       titleKeywords,
-      nextAction,
-      diagnosis,
+trendMatches,
+nextAction,
+diagnosis,
     };
   });
 
@@ -372,6 +383,7 @@ function computeSimilarityGroup(video: Video, allVideos: Video[]): string {
     }
     return false;
   });
+
 
   if (similar.length > 0) {
     return `${theme}:${Array.from(keywords).sort().join("+")}`;
