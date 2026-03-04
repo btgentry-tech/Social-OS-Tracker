@@ -8,6 +8,7 @@ import {
   Clock, Star, RotateCcw, Wrench, Archive, RefreshCw,
   Eye, Sparkles, CheckCircle2, ChevronRight, X, Minus
 } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -530,6 +531,7 @@ export default function Dashboard() {
     .slice(0, 5);
   
   const seasonalInsights = analysis?.seasonalInsights || [];
+  const trendMatches = analysis?.trendMatches || [];
   const channelHealth = analysis?.channelHealth || { score: 0, trend: "flat", label: "Need Data", details: "" };
   const overallScore = analysis?.overallOpportunityScore || 0;
 
@@ -591,6 +593,33 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      {trendMatches.length > 0 && (
+  <Card className="bg-yellow-500/5 border-yellow-500/20">
+    <CardContent className="p-4 flex items-center gap-4">
+
+      <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
+        <TrendingUp className="w-5 h-5 text-yellow-400" />
+      </div>
+
+      <div className="flex-1">
+        <h4 className="text-sm font-bold text-yellow-400">
+          Trend Opportunity
+        </h4>
+
+        <p className="text-xs text-muted-foreground">
+          Trending topic detected that matches your content.
+        </p>
+
+        <p className="text-sm font-medium mt-1">
+          {trendMatches[0].title}
+        </p>
+
+      </div>
+
+    </CardContent>
+  </Card>
+)}
 
       <section className="space-y-6">
         <div className="flex items-center justify-between">
