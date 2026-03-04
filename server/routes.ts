@@ -163,7 +163,7 @@ export async function registerRoutes(
           scoringWeights: scoringWeights as any,
         });
       }
-      const result = runFullAnalysis(vids, execs, fb, adjustedWeights, meta?.lastSyncAt || null, minViews, scoringWeights);
+      const result = await runFullAnalysis(vids, execs, fb, adjustedWeights, meta?.lastSyncAt || null, minViews, scoringWeights);
 
       persistAnalysisResults(result.opportunities);
 
@@ -449,7 +449,7 @@ async function runAnalysisAndPersist(channelId: string) {
     const weights = await storage.getArchetypeWeights(channelId);
     const meta = await storage.getSyncMetadata(channelId);
 
-    const result = runFullAnalysis(vids, execs, fb, weights, meta?.lastSyncAt || null, meta?.minViewsThreshold || 100);
+    const result = await runFullAnalysis(vids, execs, fb, weights, meta?.lastSyncAt || null, meta?.minViewsThreshold || 100);
     await persistAnalysisResults(result.opportunities);
     console.log(`Analysis persisted for ${channelId}: ${result.opportunities.length} videos classified.`);
   } catch (err) {
