@@ -598,7 +598,7 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="space-y-4">
-          {(showAll ? opportunities.filter((o: any) => o.classLabel !== "Archive").slice(0, 3) : top3).map((opp: any) => (
+          {(showAll ? opportunities.filter((o: any) => o.classLabel !== "Archive").slice(0, 3) : executionQueue).map((opp: any) => (
             <TopOpportunityCard 
               key={opp.videoId} 
               opp={opp} 
